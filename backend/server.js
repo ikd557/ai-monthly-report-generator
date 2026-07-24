@@ -25,8 +25,17 @@ const PORT = process.env.PORT || 5000;
 app.use(
   cors({
     origin: "*",
-    methods: ["GET", "POST", "OPTIONS"],
-    allowedHeaders: ["Content-Type"],
+    methods: [
+      "GET",
+      "POST",
+      "PUT",
+      "DELETE",
+      "OPTIONS",
+    ],
+    allowedHeaders: [
+      "Content-Type",
+      "Authorization",
+    ],
   })
 );
 
@@ -44,14 +53,29 @@ const ai = new GoogleGenAI({
 // FILE UPLOAD SETUP
 // ==========================================
 
+const uploadDirectory = path.join(
+  process.cwd(),
+  "uploads"
+);
+
+// Create uploads folder if it doesn't exist
+if (!fs.existsSync(uploadDirectory)) {
+  fs.mkdirSync(
+    uploadDirectory,
+    {
+      recursive: true,
+    }
+  );
+}
+
 const upload = multer({
-  dest: "/tmp/monthly-report-uploads/",
+  dest: uploadDirectory,
 
   limits: {
     files: 4,
 
-    // Maximum 10 MB per file
-    fileSize: 10 * 1024 * 1024,
+    fileSize:
+      10 * 1024 * 1024,
   },
 });
 
@@ -61,9 +85,13 @@ const upload = multer({
 // ==========================================
 
 async function extractText(file) {
-  const extension = path
-    .extname(file.originalname)
-    .toLowerCase();
+
+  const extension =
+    path
+      .extname(
+        file.originalname
+      )
+      .toLowerCase();
 
   console.log(
     `Processing ${file.originalname} (${extension})`
@@ -73,11 +101,15 @@ async function extractText(file) {
   // TXT FILE
   // ========================================
 
-  if (extension === ".txt") {
-    const text = fs.readFileSync(
-      file.path,
-      "utf8"
-    );
+  if (
+    extension === ".txt"
+  ) {
+
+    const text =
+      fs.readFileSync(
+        file.path,
+        "utf8"
+      );
 
     return text;
   }
@@ -86,11 +118,17 @@ async function extractText(file) {
   // DOCX FILE
   // ========================================
 
-  if (extension === ".docx") {
+  if (
+    extension === ".docx"
+  ) {
+
     const result =
-      await mammoth.extractRawText({
-        path: file.path,
-      });
+      await mammoth.extractRawText(
+        {
+          path:
+            file.path,
+        }
+      );
 
     return result.value;
   }
@@ -99,12 +137,19 @@ async function extractText(file) {
   // PDF FILE
   // ========================================
 
-  if (extension === ".pdf") {
+  if (
+    extension === ".pdf"
+  ) {
+
     const buffer =
-      fs.readFileSync(file.path);
+      fs.readFileSync(
+        file.path
+      );
 
     const data =
-      await pdfParse(buffer);
+      await pdfParse(
+        buffer
+      );
 
     return data.text;
   }
@@ -122,29 +167,46 @@ async function extractText(file) {
 // DELETE TEMPORARY FILES
 // ==========================================
 
-function cleanupFiles(files) {
-  if (!files || !Array.isArray(files)) {
+function cleanupFiles(
+  files
+) {
+
+  if (
+    !files ||
+    !Array.isArray(files)
+  ) {
     return;
   }
 
-  for (const file of files) {
+  for (
+    const file of files
+  ) {
+
     try {
+
       if (
         file &&
         file.path &&
-        fs.existsSync(file.path)
+        fs.existsSync(
+          file.path
+        )
       ) {
-        fs.unlinkSync(file.path);
 
-        console.log(
-          `Temporary file deleted: ${file.originalname}`
+        fs.unlinkSync(
+          file.path
         );
+
       }
-    } catch (error) {
+
+    } catch (
+      error
+    ) {
+
       console.error(
-        `Could not delete temporary file:`,
+        `Could not delete ${file.path}:`,
         error.message
       );
+
     }
   }
 }
@@ -155,22 +217,27 @@ function cleanupFiles(files) {
 
 app.get(
   "/api/health",
-  (req, res) => {
-    res.status(200).json({
-      success: true,
+  (
+    req,
+    res
+  ) => {
 
-      message:
-        "AI Monthly Report Generator API is running",
+    res.json(
+      {
+        success:
+          true,
 
-      aiProvider:
-        "Google Gemini",
+        message:
+          "AI Monthly Report Generator API is running",
 
-      model:
-        "gemini-3-flash-preview",
+        aiProvider:
+          "Google Gemini",
 
-      mode:
-        "Monthly Report Consolidation",
-    });
+        model:
+          "gemini-3-flash-preview",
+      }
+    );
+
   }
 );
 
@@ -186,8 +253,13 @@ app.post(
     4
   ),
 
-  async (req, res) => {
+  async (
+    req,
+    res
+  ) => {
+
     try {
+
       // ======================================
       // CHECK FILES
       // ======================================
@@ -196,48 +268,66 @@ app.post(
         !req.files ||
         req.files.length === 0
       ) {
-        return res.status(400).json({
-          success: false,
 
-          message:
-            "Please upload at least one weekly report.",
-        });
+        return res
+          .status(400)
+          .json(
+            {
+              success:
+                false,
+
+              message:
+                "Please upload at least one weekly report.",
+            }
+          );
+
       }
 
       console.log(
-        `\nReceived ${req.files.length} weekly report(s)`
+        `Received ${req.files.length} weekly report(s)`
       );
 
       // ======================================
-      // EXTRACT TEXT FROM ALL REPORTS
+      // EXTRACT TEXT
       // ======================================
 
-      const reports = [];
+      const reports =
+        [];
 
-      for (const file of req.files) {
+      for (
+        const file of req.files
+      ) {
+
         console.log(
           `Extracting text from: ${file.originalname}`
         );
 
         const text =
-          await extractText(file);
+          await extractText(
+            file
+          );
 
         if (
           !text ||
           !text.trim()
         ) {
+
           throw new Error(
             `${file.originalname} does not contain readable text.`
           );
+
         }
 
-        reports.push({
-          filename:
-            file.originalname,
+        reports.push(
+          {
+            filename:
+              file.originalname,
 
-          content:
-            text.trim(),
-        });
+            content:
+              text.trim(),
+          }
+        );
+
       }
 
       console.log(
@@ -245,13 +335,18 @@ app.post(
       );
 
       // ======================================
-      // COMBINE ALL WEEKLY REPORTS
+      // COMBINE REPORTS
       // ======================================
 
       const combinedReports =
         reports
           .map(
-            (report, index) => `
+            (
+              report,
+              index
+            ) => {
+
+              return `
 ========================================
 WEEKLY REPORT ${index + 1}
 FILE: ${report.filename}
@@ -262,38 +357,36 @@ ${report.content}
 ========================================
 END OF WEEKLY REPORT ${index + 1}
 ========================================
-`
+`;
+
+            }
           )
-          .join("\n");
+          .join(
+            "\n"
+          );
 
       // ======================================
       // AI PROMPT
       // ======================================
 
       const prompt = `
-You are an expert professional business and technical report editor.
+You are an expert professional business report editor.
 
-Your task is to take multiple weekly work reports and create ONE complete, detailed, professional MONTHLY REPORT by intelligently MERGING, CONSOLIDATING, and ORGANIZING all information from the weekly reports.
-
-IMPORTANT:
+Your task is to take multiple weekly reports and create ONE complete, professional MONTHLY REPORT by intelligently MERGING and CONSOLIDATING all of them.
 
 This is NOT a simple summarization task.
 
-Do NOT reduce the entire month's work into a short summary.
-
-The purpose is to combine the actual work performed during all uploaded weeks into ONE complete monthly report.
-
-The final report must preserve the important substance and meaningful details from ALL uploaded weekly reports.
+The purpose is to combine the actual work performed during all weeks into one complete monthly report.
 
 ==================================================
-CORE INSTRUCTIONS
+IMPORTANT INSTRUCTIONS
 ==================================================
 
-1. READ AND ANALYZE ALL PROVIDED WEEKLY REPORTS BEFORE WRITING THE FINAL REPORT.
+1. READ AND ANALYZE ALL PROVIDED WEEKLY REPORTS.
 
-2. MERGE information from ALL weekly reports into ONE unified monthly report.
+2. MERGE the information from ALL weekly reports into ONE complete monthly report.
 
-3. DO NOT simply summarize each weekly report separately.
+3. DO NOT simply create a short summary of the reports.
 
 4. PRESERVE important information and meaningful details from EVERY uploaded report.
 
@@ -301,11 +394,10 @@ CORE INSTRUCTIONS
 
 - Tasks completed
 - Tasks started
-- Tasks continued
 - Features developed
 - Features improved
-- Technical implementation
-- Technical details
+- Technical work
+- Implementation details
 - Testing
 - Bug fixes
 - Improvements
@@ -316,15 +408,14 @@ CORE INSTRUCTIONS
 - Progress
 - Pending tasks
 - Future work
-- Planned improvements
 
-6. If the same task or activity appears across multiple weeks, do NOT unnecessarily repeat the same information.
+6. If the same task appears in multiple weeks, do not unnecessarily repeat it.
 
-Instead, intelligently combine the information into one logical description.
+Instead, combine the information into one logical description.
 
-7. If a task progressed over multiple weeks, explain the COMPLETE progression of that task.
+7. If a task progressed over multiple weeks, describe the complete progression.
 
-For example:
+Example:
 
 Week 1:
 Login page created.
@@ -338,17 +429,17 @@ Authentication validation added.
 Week 4:
 Authentication bugs fixed.
 
-The final monthly report should explain the overall progression of the authentication work rather than repeating the same task four times.
+Merge these into a complete description explaining the progression of the authentication system.
 
-8. DO NOT remove important technical details simply to make the report shorter.
+8. DO NOT remove important technical details just to make the report shorter.
 
-9. If information appears in only one weekly report, PRESERVE that information.
+9. If information appears in only one weekly report, preserve it.
 
-10. Use ONLY information provided in the uploaded weekly reports.
+10. Use ONLY information provided in the weekly reports.
 
-11. NEVER invent information.
+11. DO NOT invent information.
 
-Do not invent:
+Never invent:
 
 - Tasks
 - Features
@@ -359,21 +450,16 @@ Do not invent:
 - Results
 - Problems
 - Solutions
-- Employees
-- Projects
-- Business outcomes
 
-12. Remove only unnecessary repetition and exact duplicate statements.
+12. Remove only unnecessary repetition.
 
-13. Organize related activities together logically.
+13. Organize related work together logically.
 
-14. Maintain chronological progression where it helps explain how work developed.
+14. Maintain chronological progress where useful.
 
 15. Use professional business and technical writing.
 
 16. The final report must represent the COMPLETE work performed during the month.
-
-17. The final report should contain enough detail that a manager or supervisor can understand the actual work performed without needing to read the original weekly reports.
 
 ==================================================
 REPORT STRUCTURE
@@ -383,25 +469,21 @@ REPORT STRUCTURE
 
 ## 1. MONTHLY OVERVIEW
 
-Provide a concise overview of the overall work performed during the month.
+Provide a short overview of the overall work performed during the month.
 
-Mention the major areas of work and overall progress.
+This should only introduce the major areas of work.
 
-IMPORTANT:
-
-This section is only an overview.
-
-It must NOT replace the detailed information in the following sections.
+Do not replace the detailed report with a short summary.
 
 ==================================================
 
 ## 2. CONSOLIDATED WORK COMPLETED
 
-This is the MOST IMPORTANT section.
+This is the most important section.
 
-Merge and organize ALL meaningful work from ALL uploaded weekly reports.
+Merge ALL meaningful work from ALL weekly reports.
 
-Group related tasks and activities logically.
+Group related tasks and activities together.
 
 For each major area of work:
 
@@ -409,21 +491,17 @@ For each major area of work:
 - Include important technical details.
 - Explain how the work progressed.
 - Combine related activities from different weeks.
-- Preserve meaningful details from the original reports.
-- Explain completed implementations.
-- Mention important fixes and improvements.
+- Preserve important details from the original reports.
 
-If a task developed over multiple weeks, describe its complete progression as one coherent piece of work.
-
-Do NOT reduce this section to a short summary.
+This section must represent the complete work performed during the month.
 
 ==================================================
 
 ## 3. WEEK-BY-WEEK PROGRESS
 
-Provide a chronological view of the work performed in each uploaded weekly report.
+Provide a chronological view of the work performed in each uploaded report.
 
-Use the following format when applicable:
+Use:
 
 ### Week 1
 
@@ -441,11 +519,9 @@ Describe the important work performed during Week 3.
 
 Describe the important work performed during Week 4.
 
-If fewer than four reports are uploaded, include ONLY the available weeks.
+If fewer than four reports are uploaded, include only the available weeks.
 
 Do not unnecessarily repeat long explanations already provided in the Consolidated Work Completed section.
-
-The weekly section should provide a concise chronological record of the work.
 
 ==================================================
 
@@ -453,9 +529,7 @@ The weekly section should provide a concise chronological record of the work.
 
 List the important achievements completed during the month.
 
-Use ONLY information supported by the uploaded weekly reports.
-
-Do not invent achievements.
+Use only information supported by the weekly reports.
 
 ==================================================
 
@@ -465,14 +539,12 @@ Describe:
 
 - Challenges encountered
 - Problems identified
-- Technical difficulties
 - Solutions implemented
 - Actions taken to resolve issues
-- Improvements made as a result
 
-Use ONLY information provided in the weekly reports.
+Use only information from the weekly reports.
 
-If no challenges are mentioned, write exactly:
+If no challenges are mentioned, write:
 
 "No specific challenges were documented in the provided weekly reports."
 
@@ -487,11 +559,10 @@ Include:
 - Planned improvements
 - Future priorities
 - Next steps
-- Pending implementations
 
-Use ONLY information from the weekly reports.
+Use only information from the weekly reports.
 
-If no future work is mentioned, write exactly:
+If no future work is mentioned, write:
 
 "No specific future work was documented in the provided weekly reports."
 
@@ -501,10 +572,6 @@ If no future work is mentioned, write exactly:
 
 Provide a short professional conclusion describing the overall progress achieved during the month.
 
-The conclusion should reflect the actual information provided in the weekly reports.
-
-Do not introduce new information.
-
 ==================================================
 FINAL REQUIREMENT
 ==================================================
@@ -513,40 +580,15 @@ The final output MUST be a COMPLETE CONSOLIDATED MONTHLY REPORT.
 
 It must NOT be a short summary.
 
-It must NOT simply repeat the weekly reports one after another.
+It must preserve meaningful work, technical details, progress, achievements, challenges, and future tasks from ALL uploaded reports.
 
-It must intelligently MERGE, CONSOLIDATE, and ORGANIZE the information.
-
-It must preserve meaningful:
-
-- Work performed
-- Technical details
-- Tasks
-- Implementations
-- Progress
-- Achievements
-- Challenges
-- Solutions
-- Pending work
-- Future tasks
-
-from ALL uploaded weekly reports.
-
-The goal is to create ONE professional monthly report that accurately represents the complete work performed during the month.
-
-Use ONLY the information provided below.
+The goal is to intelligently MERGE and ORGANIZE the weekly reports into ONE professional monthly report.
 
 Do not invent information.
 
-==================================================
-WEEKLY REPORTS
-==================================================
+Here are the weekly reports:
 
 ${combinedReports}
-
-==================================================
-END OF WEEKLY REPORTS
-==================================================
 `;
 
       // ======================================
@@ -558,13 +600,15 @@ END OF WEEKLY REPORTS
       );
 
       const response =
-        await ai.models.generateContent({
-          model:
-            "gemini-3-flash-preview",
+        await ai.models.generateContent(
+          {
+            model:
+              "gemini-3-flash-preview",
 
-          contents:
-            prompt,
-        });
+            contents:
+              prompt,
+          }
+        );
 
       // ======================================
       // GET GENERATED REPORT
@@ -577,9 +621,11 @@ END OF WEEKLY REPORTS
         !monthlyReport ||
         !monthlyReport.trim()
       ) {
+
         throw new Error(
           "Gemini returned an empty report."
         );
+
       }
 
       console.log(
@@ -587,7 +633,7 @@ END OF WEEKLY REPORTS
       );
 
       // ======================================
-      // CLEANUP TEMPORARY FILES
+      // CLEANUP TEMP FILES
       // ======================================
 
       cleanupFiles(
@@ -598,37 +644,34 @@ END OF WEEKLY REPORTS
       // SEND SUCCESS RESPONSE
       // ======================================
 
-      return res.status(200).json({
-        success: true,
+      return res.json(
+        {
+          success:
+            true,
 
-        message:
-          "Monthly report generated successfully.",
+          message:
+            "Monthly report generated successfully.",
 
-        aiProvider:
-          "Google Gemini",
+          aiProvider:
+            "Google Gemini",
 
-        model:
-          "gemini-3-flash-preview",
+          model:
+            "gemini-3-flash-preview",
 
-        filesProcessed:
-          req.files.length,
+          filesProcessed:
+            req.files.length,
 
-        report:
-          monthlyReport,
-      });
-
-    } catch (error) {
-
-      console.error(
-        "\n========================================"
+          report:
+            monthlyReport,
+        }
       );
 
-      console.error(
-        "REPORT GENERATION ERROR"
-      );
+    } catch (
+      error
+    ) {
 
       console.error(
-        "========================================"
+        "\nREPORT GENERATION ERROR:"
       );
 
       console.error(
@@ -636,7 +679,7 @@ END OF WEEKLY REPORTS
       );
 
       // ======================================
-      // CLEANUP FILES AFTER ERROR
+      // CLEANUP FILES
       // ======================================
 
       cleanupFiles(
@@ -644,50 +687,126 @@ END OF WEEKLY REPORTS
       );
 
       // ======================================
-      // SEND ERROR RESPONSE
+      // SAFE ERROR MESSAGE
       // ======================================
 
-      return res.status(500).json({
-        success: false,
+      let errorMessage =
+        "Failed to generate monthly report.";
 
-        message:
-          "Failed to generate monthly report.",
+      if (
+        error &&
+        typeof error.message ===
+          "string"
+      ) {
 
-        error:
-          error.message ||
-          "Unknown server error.",
-      });
+        errorMessage =
+          error.message;
+
+      }
+
+      // ======================================
+      // SEND ERROR
+      // ======================================
+
+      return res
+        .status(500)
+        .json(
+          {
+            success:
+              false,
+
+            message:
+              "Failed to generate monthly report.",
+
+            error:
+              errorMessage,
+          }
+        );
+
     }
+
   }
 );
 
 // ==========================================
-// VERCEL EXPORT
+// 404 HANDLER
 // ==========================================
 
-// Vercel uses this export to run
-// the Express application as a
-// serverless function.
+app.use(
+  (
+    req,
+    res
+  ) => {
 
-module.exports = app;
+    res
+      .status(404)
+      .json(
+        {
+          success:
+            false,
+
+          message:
+            `Route not found: ${req.method} ${req.originalUrl}`,
+        }
+      );
+
+  }
+);
 
 // ==========================================
-// LOCAL DEVELOPMENT SERVER
+// GENERAL ERROR HANDLER
 // ==========================================
 
-// When running locally with:
-//
+app.use(
+  (
+    error,
+    req,
+    res,
+    next
+  ) => {
+
+    console.error(
+      "SERVER ERROR:",
+      error
+    );
+
+    return res
+      .status(500)
+      .json(
+        {
+          success:
+            false,
+
+          message:
+            "Internal server error.",
+
+          error:
+            error.message ||
+            "Unknown error",
+        }
+      );
+
+  }
+);
+
+// ==========================================
+// LOCAL SERVER
+// ==========================================
+
+// When running:
 // node server.js
 //
-// the Express server starts normally.
+// The server will run on:
+// http://localhost:5000
 //
-// On Vercel, this section does not
-// execute because Vercel imports
-// the Express app instead.
+// When deployed on Vercel,
+// Vercel will use the exported app
+// through backend/api/index.js.
 
 if (
   require.main === module
 ) {
+
   app.listen(
     PORT,
     () => {
@@ -718,4 +837,11 @@ if (
 
     }
   );
+
 }
+
+// ==========================================
+// EXPORT APP FOR VERCEL
+// ==========================================
+
+module.exports = app;
