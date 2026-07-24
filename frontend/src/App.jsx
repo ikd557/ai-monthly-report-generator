@@ -8,14 +8,16 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
+  // Backend Vercel URL
+  const BACKEND_URL =
+    "https://ai-monthly-report-generator-1iwl.vercel.app";
+
   // ==========================================
   // HANDLE FILE SELECTION
   // ==========================================
 
   const handleFileChange = (event) => {
-    const selectedFiles = Array.from(
-      event.target.files || []
-    );
+    const selectedFiles = Array.from(event.target.files);
 
     setError("");
 
@@ -24,49 +26,48 @@ function App() {
     }
 
     // Maximum 4 files
-    if (
-      files.length +
-        selectedFiles.length >
-      4
-    ) {
-      setError(
-        "You can upload a maximum of 4 weekly reports."
-      );
-
+    if (files.length + selectedFiles.length > 4) {
+      setError("You can upload a maximum of 4 weekly reports.");
       event.target.value = "";
       return;
     }
 
-    // Allowed file types
-    const allowedTypes = [
-      "text/plain",
-      "application/pdf",
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    ];
+    // Maximum 10 MB per file
+    const oversizedFile = selectedFiles.find(
+      (file) => file.size > 10 * 1024 * 1024
+    );
 
-    const invalidFile =
-      selectedFiles.find(
-        (file) =>
-          !allowedTypes.includes(
-            file.type
-          )
+    if (oversizedFile) {
+      setError(
+        `${oversizedFile.name} is larger than 10 MB. Please upload a smaller file.`
       );
+      event.target.value = "";
+      return;
+    }
+
+    // Allowed extensions
+    const allowedExtensions = [".pdf", ".docx", ".txt"];
+
+    const invalidFile = selectedFiles.find((file) => {
+      const extension =
+        "." + file.name.split(".").pop().toLowerCase();
+
+      return !allowedExtensions.includes(extension);
+    });
 
     if (invalidFile) {
-      setError(
-        "Only PDF, DOCX, and TXT files are supported."
-      );
-
+      setError("Only PDF, DOCX, and TXT files are supported.");
       event.target.value = "";
       return;
     }
 
+    // Add files
     setFiles((previousFiles) => [
       ...previousFiles,
       ...selectedFiles,
     ]);
 
-    // Reset input so same file can be selected again
+    // Reset input
     event.target.value = "";
   };
 
@@ -74,18 +75,23 @@ function App() {
   // REMOVE FILE
   // ==========================================
 
-  const removeFile = (
-    indexToRemove
-  ) => {
-    setFiles(
-      (previousFiles) =>
-        previousFiles.filter(
-          (_, index) =>
-            index !==
-            indexToRemove
-        )
+  const removeFile = (indexToRemove) => {
+    setFiles((previousFiles) =>
+      previousFiles.filter(
+        (_, index) => index !== indexToRemove
+      )
     );
 
+    setError("");
+  };
+
+  // ==========================================
+  // CLEAR ALL
+  // ==========================================
+
+  const clearAll = () => {
+    setFiles([]);
+    setReport("");
     setError("");
   };
 
@@ -93,353 +99,175 @@ function App() {
   // GENERATE MONTHLY REPORT
   // ==========================================
 
-  const generateReport =
-    async () => {
+  const generateReport = async () => {
+    if (files.length === 0) {
+      setError("Please upload at least one weekly report.");
+      return;
+    }
 
-      // Check files
-      if (
-        files.length === 0
-      ) {
-        setError(
-          "Please upload at least one weekly report."
-        );
+    setLoading(true);
+    setError("");
+    setReport("");
 
-        return;
-      }
+    const formData = new FormData();
 
-      setLoading(true);
-      setError("");
-      setReport("");
+    files.forEach((file) => {
+      formData.append("reports", file);
+    });
 
-      // Create FormData
-      const formData =
-        new FormData();
+    try {
+      console.log("Sending reports to backend...");
 
-      // Add files
-      files.forEach(
-        (file) => {
-          formData.append(
-            "reports",
-            file
-          );
+      const response = await axios.post(
+        `${BACKEND_URL}/api/generate-report`,
+        formData,
+        {
+          headers: {
+            "Content-Type": "multipart/form-data",
+          },
+          timeout: 300000,
         }
       );
 
-      try {
+      console.log("Backend response:", response.data);
 
-        console.log(
-          "Sending reports to backend..."
-        );
+      if (response.data && response.data.success) {
+        const generatedReport = response.data.report;
 
-        // ======================================
-        // VERCEL BACKEND API
-        // ======================================
-
-        const response =
-          await axios.post(
-            "/api/generate-report",
-            formData,
-            {
-              headers: {
-                "Content-Type":
-                  "multipart/form-data",
-              },
-            }
-          );
-
-        console.log(
-          "Backend response:",
-          response.data
-        );
-
-        // ======================================
-        // CHECK RESPONSE
-        // ======================================
-
-        if (
-          response.data &&
-          response.data.success
-        ) {
-
-          // Make sure report is string
-          const generatedReport =
-            response.data.report;
-
-          if (
-            typeof generatedReport ===
-            "string"
-          ) {
-
-            setReport(
-              generatedReport
-            );
-
-          } else {
-
-            setReport(
-              JSON.stringify(
-                generatedReport,
-                null,
-                2
-              )
-            );
-
-          }
-
+        if (typeof generatedReport === "string") {
+          setReport(generatedReport);
         } else {
-
-          // Safely get error message
-          let errorMessage =
-            "Failed to generate report.";
-
-          if (
-            response.data
-          ) {
-
-            if (
-              typeof response.data.error ===
-              "string"
-            ) {
-
-              errorMessage =
-                response.data.error;
-
-            } else if (
-              typeof response.data.message ===
-              "string"
-            ) {
-
-              errorMessage =
-                response.data.message;
-
-            }
-
-          }
-
-          setError(
-            errorMessage
+          setReport(
+            JSON.stringify(generatedReport, null, 2)
           );
-
         }
-
-      } catch (
-        error
-      ) {
-
-        console.error(
-          "REPORT GENERATION ERROR:",
-          error
-        );
-
-        // ======================================
-        // SAFE ERROR HANDLING
-        // IMPORTANT:
-        // NEVER put an object directly
-        // inside setError()
-        // ======================================
-
-        let errorMessage =
-          "Something went wrong while generating the report.";
-
-        // Backend returned response
-        if (
-          error.response &&
-          error.response.data
-        ) {
-
-          const data =
-            error.response.data;
-
-          if (
-            typeof data.error ===
-            "string"
-          ) {
-
-            errorMessage =
-              data.error;
-
-          } else if (
-            typeof data.message ===
-            "string"
-          ) {
-
-            errorMessage =
-              data.message;
-
-          } else if (
-            typeof data ===
-            "string"
-          ) {
-
-            errorMessage =
-              data;
-
-          }
-
-        }
-
-        // Network error
-        else if (
-          error.request &&
-          !error.response
-        ) {
-
-          errorMessage =
-            "Could not connect to the backend server. Please try again.";
-
-        }
-
-        // Normal JavaScript error
-        else if (
-          error.message
-        ) {
-
-          errorMessage =
-            error.message;
-
-        }
-
-        // Always convert to string
+      } else {
         setError(
-          String(
-            errorMessage
-          )
+          response.data?.message ||
+            response.data?.error ||
+            "Failed to generate monthly report."
         );
+      }
+    } catch (error) {
+      console.error(
+        "REPORT GENERATION ERROR:",
+        error
+      );
 
-      } finally {
+      let errorMessage =
+        "Something went wrong while generating the report.";
 
-        setLoading(false);
+      if (error.response) {
+        const data = error.response.data;
 
+        if (typeof data?.error === "string") {
+          errorMessage = data.error;
+        } else if (
+          typeof data?.message === "string"
+        ) {
+          errorMessage = data.message;
+        } else if (typeof data === "string") {
+          errorMessage = data;
+        } else {
+          errorMessage = `Server error (${error.response.status}).`;
+        }
+      } else if (error.request) {
+        errorMessage =
+          "Could not connect to the backend server. Please check that the backend is running.";
+      } else if (error.message) {
+        errorMessage = error.message;
       }
 
-    };
+      setError(String(errorMessage));
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // ==========================================
   // COPY REPORT
   // ==========================================
 
-  const copyReport =
-    async () => {
+  const copyReport = async () => {
+    if (!report) {
+      return;
+    }
 
-      if (
-        !report
-      ) {
-        return;
-      }
-
-      try {
-
-        await navigator.clipboard.writeText(
-          report
-        );
-
-        alert(
-          "Report copied to clipboard!"
-        );
-
-      } catch (
-        error
-      ) {
-
-        console.error(
-          "Copy error:",
-          error
-        );
-
-        setError(
-          "Could not copy the report."
-        );
-
-      }
-
-    };
+    try {
+      await navigator.clipboard.writeText(report);
+      alert("Monthly report copied to clipboard!");
+    } catch (error) {
+      console.error("Copy error:", error);
+      setError("Could not copy the report.");
+    }
+  };
 
   // ==========================================
   // DOWNLOAD REPORT
   // ==========================================
 
-  const downloadReport =
-    () => {
+  const downloadReport = () => {
+    if (!report) {
+      return;
+    }
 
-      if (
-        !report
-      ) {
-        return;
-      }
+    try {
+      const blob = new Blob(
+        [report],
+        {
+          type: "text/plain;charset=utf-8",
+        }
+      );
 
-      try {
+      const url = URL.createObjectURL(blob);
 
-        const blob =
-          new Blob(
-            [
-              report,
-            ],
-            {
-              type:
-                "text/plain;charset=utf-8",
-            }
-          );
+      const link = document.createElement("a");
 
-        const url =
-          URL.createObjectURL(
-            blob
-          );
+      link.href = url;
+      link.download = "monthly-report.txt";
 
-        const link =
-          document.createElement(
-            "a"
-          );
+      document.body.appendChild(link);
 
-        link.href =
-          url;
+      link.click();
 
-        link.download =
-          "monthly-report.txt";
+      document.body.removeChild(link);
 
-        document.body.appendChild(
-          link
-        );
-
-        link.click();
-
-        document.body.removeChild(
-          link
-        );
-
-        URL.revokeObjectURL(
-          url
-        );
-
-      } catch (
-        error
-      ) {
-
-        console.error(
-          "Download error:",
-          error
-        );
-
-        setError(
-          "Could not download the report."
-        );
-
-      }
-
-    };
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error("Download error:", error);
+      setError("Could not download the report.");
+    }
+  };
 
   // ==========================================
-  // APP UI
+  // FORMAT FILE SIZE
+  // ==========================================
+
+  const formatFileSize = (bytes) => {
+    if (bytes < 1024) {
+      return `${bytes} B`;
+    }
+
+    if (bytes < 1024 * 1024) {
+      return `${(bytes / 1024).toFixed(1)} KB`;
+    }
+
+    return `${(
+      bytes /
+      (1024 * 1024)
+    ).toFixed(1)} MB`;
+  };
+
+  // ==========================================
+  // UI
   // ==========================================
 
   return (
     <div className="app">
 
-      {/* =====================================
-          HEADER
-      ====================================== */}
+      {/* HEADER */}
 
       <header className="header">
-
         <div className="brand">
 
           <div className="brand-icon">
@@ -447,7 +275,6 @@ function App() {
           </div>
 
           <div>
-
             <h1>
               Monthly Report Generator
             </h1>
@@ -456,7 +283,6 @@ function App() {
               Transform weekly reports into
               professional monthly insights
             </p>
-
           </div>
 
         </div>
@@ -464,19 +290,14 @@ function App() {
         <div className="ai-badge">
           ✨ Powered by Gemini AI
         </div>
-
       </header>
 
 
-      {/* =====================================
-          MAIN CONTENT
-      ====================================== */}
+      {/* MAIN */}
 
       <main className="container">
 
-        {/* ===================================
-            HERO
-        ==================================== */}
+        {/* HERO */}
 
         <section className="hero">
 
@@ -486,31 +307,25 @@ function App() {
 
           <h2>
             Turn 4 weeks of work into
-            <span>
-              {" "}
-              one professional report.
-            </span>
+            <span> one professional report.</span>
           </h2>
 
           <p>
             Upload your weekly reports and let
-            AI analyze your progress, achievements,
-            challenges, and priorities.
+            AI intelligently merge and consolidate
+            your work into one complete monthly report.
           </p>
 
         </section>
 
 
-        {/* ===================================
-            UPLOAD CARD
-        ==================================== */}
+        {/* UPLOAD CARD */}
 
         <section className="card">
 
           <div className="section-title">
 
             <div>
-
               <h3>
                 Upload Weekly Reports
               </h3>
@@ -518,7 +333,6 @@ function App() {
               <p>
                 Add up to 4 reports for the month
               </p>
-
             </div>
 
             <span className="file-count">
@@ -528,9 +342,7 @@ function App() {
           </div>
 
 
-          {/* =================================
-              UPLOAD AREA
-          ================================== */}
+          {/* UPLOAD AREA */}
 
           <label
             className="upload-area"
@@ -550,7 +362,7 @@ function App() {
             </p>
 
             <span>
-              Maximum 4 files
+              Maximum 4 files • 10 MB each
             </span>
 
             <input
@@ -558,93 +370,88 @@ function App() {
               type="file"
               multiple
               accept=".pdf,.docx,.txt"
-              onChange={
-                handleFileChange
-              }
+              onChange={handleFileChange}
               disabled={
-                files.length >= 4
+                files.length >= 4 ||
+                loading
               }
             />
 
           </label>
 
 
-          {/* =================================
-              SELECTED FILES
-          ================================== */}
+          {/* SELECTED FILES */}
 
           {files.length > 0 && (
 
             <div className="file-list">
 
-              <h4>
-                Selected Reports
-              </h4>
+              <div className="file-list-header">
 
-              {files.map(
-                (
-                  file,
-                  index
-                ) => (
+                <h4>
+                  Selected Reports
+                </h4>
 
-                  <div
-                    className="file-item"
-                    key={
-                      `${file.name}-${index}`
-                    }
-                  >
+                <button
+                  type="button"
+                  onClick={clearAll}
+                  disabled={loading}
+                >
+                  Clear All
+                </button>
 
-                    <div className="file-info">
+              </div>
 
-                      <div className="file-icon">
-                        📄
-                      </div>
 
-                      <div>
+              {files.map((file, index) => (
 
-                        <strong>
-                          {file.name}
-                        </strong>
+                <div
+                  className="file-item"
+                  key={`${file.name}-${index}`}
+                >
 
-                        <small>
-                          {(
-                            file.size /
-                            1024
-                          ).toFixed(
-                            1
-                          )}{" "}
-                          KB
-                        </small>
+                  <div className="file-info">
 
-                      </div>
+                    <div className="file-icon">
+                      📄
+                    </div>
+
+                    <div>
+
+                      <strong>
+                        {file.name}
+                      </strong>
+
+                      <small>
+                        {formatFileSize(file.size)}
+                      </small>
 
                     </div>
 
-                    <button
-                      type="button"
-                      className="remove-button"
-                      onClick={() =>
-                        removeFile(
-                          index
-                        )
-                      }
-                    >
-                      ×
-                    </button>
-
                   </div>
 
-                )
-              )}
+
+                  <button
+                    type="button"
+                    className="remove-button"
+                    onClick={() =>
+                      removeFile(index)
+                    }
+                    disabled={loading}
+                  >
+                    ×
+                  </button>
+
+                </div>
+
+              ))}
 
             </div>
 
           )}
 
 
-          {/* =================================
-              ERROR MESSAGE
-          ================================== */}
+          {/* ERROR */}
 
           {error && (
 
@@ -653,9 +460,7 @@ function App() {
               ⚠️{" "}
 
               <span>
-                {String(
-                  error
-                )}
+                {String(error)}
               </span>
 
             </div>
@@ -663,16 +468,12 @@ function App() {
           )}
 
 
-          {/* =================================
-              GENERATE BUTTON
-          ================================== */}
+          {/* GENERATE BUTTON */}
 
           <button
             type="button"
             className="generate-button"
-            onClick={
-              generateReport
-            }
+            onClick={generateReport}
             disabled={
               loading ||
               files.length === 0
@@ -683,8 +484,7 @@ function App() {
 
               <>
                 <span className="spinner"></span>
-
-                Analyzing Reports...
+                Merging Reports with AI...
               </>
 
             ) : (
@@ -697,12 +497,18 @@ function App() {
 
           </button>
 
+
+          <p className="upload-note">
+            AI will merge all uploaded weekly
+            reports into one detailed monthly
+            report without unnecessarily
+            repeating duplicate information.
+          </p>
+
         </section>
 
 
-        {/* ===================================
-            GENERATED REPORT
-        ==================================== */}
+        {/* GENERATED REPORT */}
 
         {report && (
 
@@ -717,27 +523,24 @@ function App() {
                 </h3>
 
                 <p>
-                  Generated by Gemini AI
+                  Generated and consolidated by Gemini AI
                 </p>
 
               </div>
+
 
               <div className="report-actions">
 
                 <button
                   type="button"
-                  onClick={
-                    copyReport
-                  }
+                  onClick={copyReport}
                 >
                   📋 Copy
                 </button>
 
                 <button
                   type="button"
-                  onClick={
-                    downloadReport
-                  }
+                  onClick={downloadReport}
                 >
                   ↓ Download
                 </button>
@@ -751,17 +554,12 @@ function App() {
 
               <pre
                 style={{
-                  whiteSpace:
-                    "pre-wrap",
-                  fontFamily:
-                    "inherit",
-                  margin:
-                    0,
+                  whiteSpace: "pre-wrap",
+                  fontFamily: "inherit",
+                  margin: 0,
                 }}
               >
-                {String(
-                  report
-                )}
+                {String(report)}
               </pre>
 
             </div>
@@ -773,20 +571,12 @@ function App() {
       </main>
 
 
-      {/* =====================================
-          FOOTER
-      ====================================== */}
+      {/* FOOTER */}
 
       <footer>
-
         AI Monthly Report Generator
-
-        <span>
-          •
-        </span>
-
+        <span> • </span>
         Built with React & Gemini AI
-
       </footer>
 
     </div>
