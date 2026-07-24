@@ -19,14 +19,15 @@ function App() {
 
     setError("");
 
-    // No files selected
     if (selectedFiles.length === 0) {
       return;
     }
 
     // Maximum 4 files
     if (
-      files.length + selectedFiles.length > 4
+      files.length +
+        selectedFiles.length >
+      4
     ) {
       setError(
         "You can upload a maximum of 4 weekly reports."
@@ -36,27 +37,20 @@ function App() {
       return;
     }
 
-    // Allowed file extensions
-    const allowedExtensions = [
-      ".pdf",
-      ".docx",
-      ".txt",
+    // Allowed file types
+    const allowedTypes = [
+      "text/plain",
+      "application/pdf",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     ];
 
-    // Check invalid files
     const invalidFile =
-      selectedFiles.find((file) => {
-        const extension =
-          "." +
-          file.name
-            .split(".")
-            .pop()
-            .toLowerCase();
-
-        return !allowedExtensions.includes(
-          extension
-        );
-      });
+      selectedFiles.find(
+        (file) =>
+          !allowedTypes.includes(
+            file.type
+          )
+      );
 
     if (invalidFile) {
       setError(
@@ -67,43 +61,29 @@ function App() {
       return;
     }
 
-    // Check file size
-    const oversizedFile =
-      selectedFiles.find(
-        (file) =>
-          file.size >
-          10 * 1024 * 1024
-      );
-
-    if (oversizedFile) {
-      setError(
-        `${oversizedFile.name} is larger than 10 MB. Please upload a smaller file.`
-      );
-
-      event.target.value = "";
-      return;
-    }
-
-    // Add files
     setFiles((previousFiles) => [
       ...previousFiles,
       ...selectedFiles,
     ]);
 
-    // Reset input
+    // Reset input so same file can be selected again
     event.target.value = "";
   };
 
   // ==========================================
-  // REMOVE SELECTED FILE
+  // REMOVE FILE
   // ==========================================
 
-  const removeFile = (indexToRemove) => {
-    setFiles((previousFiles) =>
-      previousFiles.filter(
-        (_, index) =>
-          index !== indexToRemove
-      )
+  const removeFile = (
+    indexToRemove
+  ) => {
+    setFiles(
+      (previousFiles) =>
+        previousFiles.filter(
+          (_, index) =>
+            index !==
+            indexToRemove
+        )
     );
 
     setError("");
@@ -113,277 +93,350 @@ function App() {
   // GENERATE MONTHLY REPORT
   // ==========================================
 
-  const generateReport = async () => {
-    // Check files
-    if (files.length === 0) {
-      setError(
-        "Please upload at least one weekly report."
+  const generateReport =
+    async () => {
+
+      // Check files
+      if (
+        files.length === 0
+      ) {
+        setError(
+          "Please upload at least one weekly report."
+        );
+
+        return;
+      }
+
+      setLoading(true);
+      setError("");
+      setReport("");
+
+      // Create FormData
+      const formData =
+        new FormData();
+
+      // Add files
+      files.forEach(
+        (file) => {
+          formData.append(
+            "reports",
+            file
+          );
+        }
       );
 
-      return;
-    }
+      try {
 
-    // Start loading
-    setLoading(true);
+        console.log(
+          "Sending reports to backend..."
+        );
 
-    // Clear previous error
-    setError("");
+        // ======================================
+        // VERCEL BACKEND API
+        // ======================================
 
-    // Clear previous report
-    setReport("");
+        const response =
+          await axios.post(
+            "/api/generate-report",
+            formData,
+            {
+              headers: {
+                "Content-Type":
+                  "multipart/form-data",
+              },
+            }
+          );
 
-    // Create FormData
-    const formData = new FormData();
+        console.log(
+          "Backend response:",
+          response.data
+        );
 
-    // Add all uploaded files
-    files.forEach((file) => {
-      formData.append(
-        "reports",
-        file
-      );
-    });
+        // ======================================
+        // CHECK RESPONSE
+        // ======================================
 
-    try {
-      console.log(
-        "Sending reports to backend..."
-      );
+        if (
+          response.data &&
+          response.data.success
+        ) {
 
-      // ========================================
-      // IMPORTANT
-      // Same Vercel domain backend API
-      // ========================================
+          // Make sure report is string
+          const generatedReport =
+            response.data.report;
 
-      const response =
-        await axios.post(
-          "/api/generate-report",
-          formData,
-          {
-            headers: {
-              "Content-Type":
-                "multipart/form-data",
-            },
+          if (
+            typeof generatedReport ===
+            "string"
+          ) {
 
-            // 5 minute timeout
-            timeout:
-              5 * 60 * 1000,
+            setReport(
+              generatedReport
+            );
+
+          } else {
+
+            setReport(
+              JSON.stringify(
+                generatedReport,
+                null,
+                2
+              )
+            );
+
           }
-        );
 
-      console.log(
-        "Backend response:",
-        response.data
-      );
+        } else {
 
-      // ========================================
-      // SUCCESS
-      // ========================================
+          // Safely get error message
+          let errorMessage =
+            "Failed to generate report.";
 
-      if (
-        response.data &&
-        response.data.success
-      ) {
-        setReport(
-          response.data.report || ""
-        );
+          if (
+            response.data
+          ) {
 
-        setError("");
-      } else {
-        setError(
-          response.data?.message ||
-            response.data?.error ||
-            "Failed to generate monthly report."
-        );
-      }
-    } catch (error) {
-      console.error(
-        "REPORT GENERATION ERROR:",
+            if (
+              typeof response.data.error ===
+              "string"
+            ) {
+
+              errorMessage =
+                response.data.error;
+
+            } else if (
+              typeof response.data.message ===
+              "string"
+            ) {
+
+              errorMessage =
+                response.data.message;
+
+            }
+
+          }
+
+          setError(
+            errorMessage
+          );
+
+        }
+
+      } catch (
         error
-      );
-
-      // ========================================
-      // SERVER ERROR
-      // ========================================
-
-      if (
-        error.response
       ) {
-        const serverMessage =
-          error.response.data?.error ||
-          error.response.data?.message;
 
-        setError(
-          serverMessage ||
-            `Server error (${error.response.status}). Please try again.`
+        console.error(
+          "REPORT GENERATION ERROR:",
+          error
         );
+
+        // ======================================
+        // SAFE ERROR HANDLING
+        // IMPORTANT:
+        // NEVER put an object directly
+        // inside setError()
+        // ======================================
+
+        let errorMessage =
+          "Something went wrong while generating the report.";
+
+        // Backend returned response
+        if (
+          error.response &&
+          error.response.data
+        ) {
+
+          const data =
+            error.response.data;
+
+          if (
+            typeof data.error ===
+            "string"
+          ) {
+
+            errorMessage =
+              data.error;
+
+          } else if (
+            typeof data.message ===
+            "string"
+          ) {
+
+            errorMessage =
+              data.message;
+
+          } else if (
+            typeof data ===
+            "string"
+          ) {
+
+            errorMessage =
+              data;
+
+          }
+
+        }
+
+        // Network error
+        else if (
+          error.request &&
+          !error.response
+        ) {
+
+          errorMessage =
+            "Could not connect to the backend server. Please try again.";
+
+        }
+
+        // Normal JavaScript error
+        else if (
+          error.message
+        ) {
+
+          errorMessage =
+            error.message;
+
+        }
+
+        // Always convert to string
+        setError(
+          String(
+            errorMessage
+          )
+        );
+
+      } finally {
+
+        setLoading(false);
+
       }
 
-      // ========================================
-      // REQUEST TIMEOUT
-      // ========================================
-
-      else if (
-        error.code ===
-        "ECONNABORTED"
-      ) {
-        setError(
-          "The report is taking too long to generate. Please try again."
-        );
-      }
-
-      // ========================================
-      // NETWORK ERROR
-      // ========================================
-
-      else if (
-        error.request
-      ) {
-        setError(
-          "Could not connect to the backend server. Please try again."
-        );
-      }
-
-      // ========================================
-      // OTHER ERROR
-      // ========================================
-
-      else {
-        setError(
-          "Something went wrong while generating the report."
-        );
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
+    };
 
   // ==========================================
   // COPY REPORT
   // ==========================================
 
-  const copyReport = async () => {
-    if (!report) {
-      return;
-    }
+  const copyReport =
+    async () => {
 
-    try {
-      await navigator.clipboard.writeText(
-        report
-      );
+      if (
+        !report
+      ) {
+        return;
+      }
 
-      alert(
-        "Monthly report copied to clipboard!"
-      );
-    } catch (error) {
-      console.error(
-        "Copy error:",
+      try {
+
+        await navigator.clipboard.writeText(
+          report
+        );
+
+        alert(
+          "Report copied to clipboard!"
+        );
+
+      } catch (
         error
-      );
+      ) {
 
-      setError(
-        "Could not copy the report."
-      );
-    }
-  };
+        console.error(
+          "Copy error:",
+          error
+        );
 
-  // ==========================================
-  // DOWNLOAD REPORT AS TXT
-  // ==========================================
+        setError(
+          "Could not copy the report."
+        );
 
-  const downloadReport = () => {
-    if (!report) {
-      return;
-    }
+      }
 
-    const blob =
-      new Blob(
-        [report],
-        {
-          type:
-            "text/plain;charset=utf-8",
-        }
-      );
-
-    const url =
-      URL.createObjectURL(
-        blob
-      );
-
-    const link =
-      document.createElement(
-        "a"
-      );
-
-    link.href = url;
-
-    link.download =
-      "monthly-report.txt";
-
-    document.body.appendChild(
-      link
-    );
-
-    link.click();
-
-    document.body.removeChild(
-      link
-    );
-
-    URL.revokeObjectURL(
-      url
-    );
-  };
+    };
 
   // ==========================================
-  // CLEAR EVERYTHING
+  // DOWNLOAD REPORT
   // ==========================================
 
-  const clearAll = () => {
-    setFiles([]);
+  const downloadReport =
+    () => {
 
-    setReport("");
+      if (
+        !report
+      ) {
+        return;
+      }
 
-    setError("");
-  };
+      try {
+
+        const blob =
+          new Blob(
+            [
+              report,
+            ],
+            {
+              type:
+                "text/plain;charset=utf-8",
+            }
+          );
+
+        const url =
+          URL.createObjectURL(
+            blob
+          );
+
+        const link =
+          document.createElement(
+            "a"
+          );
+
+        link.href =
+          url;
+
+        link.download =
+          "monthly-report.txt";
+
+        document.body.appendChild(
+          link
+        );
+
+        link.click();
+
+        document.body.removeChild(
+          link
+        );
+
+        URL.revokeObjectURL(
+          url
+        );
+
+      } catch (
+        error
+      ) {
+
+        console.error(
+          "Download error:",
+          error
+        );
+
+        setError(
+          "Could not download the report."
+        );
+
+      }
+
+    };
 
   // ==========================================
-  // FORMAT FILE SIZE
-  // ==========================================
-
-  const formatFileSize = (
-    bytes
-  ) => {
-    if (
-      bytes <
-      1024
-    ) {
-      return `${bytes} B`;
-    }
-
-    if (
-      bytes <
-      1024 * 1024
-    ) {
-      return `${(
-        bytes / 1024
-      ).toFixed(1)} KB`;
-    }
-
-    return `${(
-      bytes /
-      (1024 * 1024)
-    ).toFixed(1)} MB`;
-  };
-
-  // ==========================================
-  // UI
+  // APP UI
   // ==========================================
 
   return (
     <div className="app">
 
-      {/* ====================================
+      {/* =====================================
           HEADER
-      ==================================== */}
+      ====================================== */}
 
       <header className="header">
 
@@ -414,15 +467,16 @@ function App() {
 
       </header>
 
-      {/* ====================================
+
+      {/* =====================================
           MAIN CONTENT
-      ==================================== */}
+      ====================================== */}
 
       <main className="container">
 
-        {/* ==================================
+        {/* ===================================
             HERO
-        ================================== */}
+        ==================================== */}
 
         <section className="hero">
 
@@ -439,17 +493,17 @@ function App() {
           </h2>
 
           <p>
-            Upload your weekly reports and
-            let AI intelligently merge and
-            consolidate your work into one
-            complete monthly report.
+            Upload your weekly reports and let
+            AI analyze your progress, achievements,
+            challenges, and priorities.
           </p>
 
         </section>
 
-        {/* ==================================
+
+        {/* ===================================
             UPLOAD CARD
-        ================================== */}
+        ==================================== */}
 
         <section className="card">
 
@@ -473,9 +527,10 @@ function App() {
 
           </div>
 
-          {/* ================================
+
+          {/* =================================
               UPLOAD AREA
-          ================================= */}
+          ================================== */}
 
           <label
             className="upload-area"
@@ -495,7 +550,7 @@ function App() {
             </p>
 
             <span>
-              Maximum 4 files • 10 MB each
+              Maximum 4 files
             </span>
 
             <input
@@ -507,14 +562,14 @@ function App() {
                 handleFileChange
               }
               disabled={
-                files.length >= 4 ||
-                loading
+                files.length >= 4
               }
             />
 
           </label>
 
-          {/* ==================================
+
+          {/* =================================
               SELECTED FILES
           ================================== */}
 
@@ -522,25 +577,9 @@ function App() {
 
             <div className="file-list">
 
-              <div className="file-list-header">
-
-                <h4>
-                  Selected Reports
-                </h4>
-
-                <button
-                  type="button"
-                  onClick={
-                    clearAll
-                  }
-                  disabled={
-                    loading
-                  }
-                >
-                  Clear All
-                </button>
-
-              </div>
+              <h4>
+                Selected Reports
+              </h4>
 
               {files.map(
                 (
@@ -550,7 +589,9 @@ function App() {
 
                   <div
                     className="file-item"
-                    key={`${file.name}-${index}`}
+                    key={
+                      `${file.name}-${index}`
+                    }
                   >
 
                     <div className="file-info">
@@ -566,9 +607,13 @@ function App() {
                         </strong>
 
                         <small>
-                          {formatFileSize(
-                            file.size
-                          )}
+                          {(
+                            file.size /
+                            1024
+                          ).toFixed(
+                            1
+                          )}{" "}
+                          KB
                         </small>
 
                       </div>
@@ -583,9 +628,6 @@ function App() {
                           index
                         )
                       }
-                      disabled={
-                        loading
-                      }
                     >
                       ×
                     </button>
@@ -599,19 +641,29 @@ function App() {
 
           )}
 
-          {/* ==================================
+
+          {/* =================================
               ERROR MESSAGE
           ================================== */}
 
           {error && (
 
             <div className="error-message">
-              ⚠️ {error}
+
+              ⚠️{" "}
+
+              <span>
+                {String(
+                  error
+                )}
+              </span>
+
             </div>
 
           )}
 
-          {/* ==================================
+
+          {/* =================================
               GENERATE BUTTON
           ================================== */}
 
@@ -632,7 +684,7 @@ function App() {
               <>
                 <span className="spinner"></span>
 
-                Merging Reports with AI...
+                Analyzing Reports...
               </>
 
             ) : (
@@ -645,22 +697,12 @@ function App() {
 
           </button>
 
-          {/* ==================================
-              INFORMATION
-          ================================== */}
-
-          <p className="upload-note">
-            AI will merge all uploaded weekly
-            reports into one detailed monthly
-            report without unnecessarily
-            repeating duplicate information.
-          </p>
-
         </section>
 
-        {/* ==================================
-            REPORT SECTION
-        ================================== */}
+
+        {/* ===================================
+            GENERATED REPORT
+        ==================================== */}
 
         {report && (
 
@@ -675,8 +717,7 @@ function App() {
                 </h3>
 
                 <p>
-                  Generated and consolidated
-                  by Gemini AI
+                  Generated by Gemini AI
                 </p>
 
               </div>
@@ -705,8 +746,24 @@ function App() {
 
             </div>
 
+
             <div className="report-content">
-              {report}
+
+              <pre
+                style={{
+                  whiteSpace:
+                    "pre-wrap",
+                  fontFamily:
+                    "inherit",
+                  margin:
+                    0,
+                }}
+              >
+                {String(
+                  report
+                )}
+              </pre>
+
             </div>
 
           </section>
@@ -715,9 +772,10 @@ function App() {
 
       </main>
 
-      {/* ====================================
+
+      {/* =====================================
           FOOTER
-      ==================================== */}
+      ====================================== */}
 
       <footer>
 
