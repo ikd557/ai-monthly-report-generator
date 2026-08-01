@@ -7,7 +7,6 @@ const fs = require("fs");
 const path = require("path");
 const mammoth = require("mammoth");
 const pdfParse = require("pdf-parse");
-
 const { GoogleGenAI } = require("@google/genai");
 
 // ==========================================
@@ -24,18 +23,9 @@ const PORT = process.env.PORT || 5000;
 
 app.use(
   cors({
-    origin: "*",
-    methods: [
-      "GET",
-      "POST",
-      "PUT",
-      "DELETE",
-      "OPTIONS",
-    ],
-    allowedHeaders: [
-      "Content-Type",
-      "Authorization",
-    ],
+    origin: true,
+    methods: ["GET", "POST", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
 
@@ -45,121 +35,119 @@ app.use(express.json());
 // GEMINI AI SETUP
 // ==========================================
 
+if (!process.env.GEMINI_API_KEY) {
+  console.warn(
+    "WARNING: GEMINI_API_KEY is missing from .env file."
+  );
+}
+
 const ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY,
 });
 
 // ==========================================
-// FILE UPLOAD SETUP
+// UPLOAD DIRECTORY
 // ==========================================
 
 const uploadDirectory = path.join(
-  process.cwd(),
+  __dirname,
   "uploads"
 );
 
-// Create uploads folder if it doesn't exist
 if (!fs.existsSync(uploadDirectory)) {
-  fs.mkdirSync(
-    uploadDirectory,
-    {
-      recursive: true,
-    }
-  );
+  fs.mkdirSync(uploadDirectory, {
+    recursive: true,
+  });
 }
+
+// ==========================================
+// MULTER SETUP
+// ==========================================
 
 const upload = multer({
   dest: uploadDirectory,
 
   limits: {
     files: 4,
+    fileSize: 10 * 1024 * 1024,
+  },
 
-    fileSize:
-      10 * 1024 * 1024,
+  fileFilter: (req, file, cb) => {
+    const allowedExtensions = [
+      ".pdf",
+      ".docx",
+      ".txt",
+    ];
+
+    const extension = path
+      .extname(file.originalname)
+      .toLowerCase();
+
+    if (!allowedExtensions.includes(extension)) {
+      return cb(
+        new Error(
+          "Only PDF, DOCX, and TXT files are supported."
+        )
+      );
+    }
+
+    cb(null, true);
   },
 });
 
 // ==========================================
-// EXTRACT TEXT FROM FILE
-// Supports TXT, DOCX, PDF
+// EXTRACT TEXT
 // ==========================================
 
 async function extractText(file) {
-
-  const extension =
-    path
-      .extname(
-        file.originalname
-      )
-      .toLowerCase();
+  const extension = path
+    .extname(file.originalname)
+    .toLowerCase();
 
   console.log(
-    `Processing ${file.originalname} (${extension})`
+    `Processing file: ${file.originalname}`
   );
 
-  // ========================================
-  // TXT FILE
-  // ========================================
+  // ------------------------------------------
+  // TXT
+  // ------------------------------------------
 
-  if (
-    extension === ".txt"
-  ) {
-
-    const text =
-      fs.readFileSync(
-        file.path,
-        "utf8"
-      );
-
-    return text;
+  if (extension === ".txt") {
+    return fs.readFileSync(
+      file.path,
+      "utf8"
+    );
   }
 
-  // ========================================
-  // DOCX FILE
-  // ========================================
+  // ------------------------------------------
+  // DOCX
+  // ------------------------------------------
 
-  if (
-    extension === ".docx"
-  ) {
-
+  if (extension === ".docx") {
     const result =
-      await mammoth.extractRawText(
-        {
-          path:
-            file.path,
-        }
-      );
+      await mammoth.extractRawText({
+        path: file.path,
+      });
 
     return result.value;
   }
 
-  // ========================================
-  // PDF FILE
-  // ========================================
+  // ------------------------------------------
+  // PDF
+  // ------------------------------------------
 
-  if (
-    extension === ".pdf"
-  ) {
+  if (extension === ".pdf") {
+    const buffer = fs.readFileSync(
+      file.path
+    );
 
-    const buffer =
-      fs.readFileSync(
-        file.path
-      );
-
-    const data =
-      await pdfParse(
-        buffer
-      );
+    const data = await pdfParse(buffer);
 
     return data.text;
   }
 
-  // ========================================
-  // UNSUPPORTED FILE
-  // ========================================
-
   throw new Error(
-    `Unsupported file type: ${extension}. Please upload PDF, DOCX, or TXT files.`
+    `Unsupported file type: ${extension}`
   );
 }
 
@@ -167,46 +155,29 @@ async function extractText(file) {
 // DELETE TEMPORARY FILES
 // ==========================================
 
-function cleanupFiles(
-  files
-) {
-
-  if (
-    !files ||
-    !Array.isArray(files)
-  ) {
+function cleanupFiles(files) {
+  if (!files || !Array.isArray(files)) {
     return;
   }
 
-  for (
-    const file of files
-  ) {
-
+  for (const file of files) {
     try {
-
       if (
         file &&
         file.path &&
-        fs.existsSync(
-          file.path
-        )
+        fs.existsSync(file.path)
       ) {
+        fs.unlinkSync(file.path);
 
-        fs.unlinkSync(
-          file.path
+        console.log(
+          `Deleted temporary file: ${file.originalname}`
         );
-
       }
-
-    } catch (
-      error
-    ) {
-
+    } catch (error) {
       console.error(
-        `Could not delete ${file.path}:`,
+        "Cleanup error:",
         error.message
       );
-
     }
   }
 }
@@ -217,27 +188,16 @@ function cleanupFiles(
 
 app.get(
   "/api/health",
-  (
-    req,
-    res
-  ) => {
-
-    res.json(
-      {
-        success:
-          true,
-
-        message:
-          "AI Monthly Report Generator API is running",
-
-        aiProvider:
-          "Google Gemini",
-
-        model:
-          "gemini-3-flash-preview",
-      }
-    );
-
+  (req, res) => {
+    res.status(200).json({
+      success: true,
+      message:
+        "AI Monthly Report Generator backend is running",
+      aiProvider: "Google Gemini",
+      model: "gemini-3-flash-preview",
+      server:
+        `http://localhost:${PORT}`,
+    });
   }
 );
 
@@ -247,92 +207,92 @@ app.get(
 
 app.post(
   "/api/generate-report",
+  upload.array("reports", 4),
 
-  upload.array(
-    "reports",
-    4
-  ),
-
-  async (
-    req,
-    res
-  ) => {
+  async (req, res) => {
+    const uploadedFiles =
+      req.files || [];
 
     try {
+      console.log(
+        "\n========================================"
+      );
+
+      console.log(
+        "MONTHLY REPORT REQUEST RECEIVED"
+      );
+
+      console.log(
+        "========================================"
+      );
+
+      console.log(
+        `Files received: ${uploadedFiles.length}`
+      );
 
       // ======================================
       // CHECK FILES
       // ======================================
 
-      if (
-        !req.files ||
-        req.files.length === 0
-      ) {
-
-        return res
-          .status(400)
-          .json(
-            {
-              success:
-                false,
-
-              message:
-                "Please upload at least one weekly report.",
-            }
-          );
-
+      if (uploadedFiles.length === 0) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Please upload at least one weekly report.",
+        });
       }
 
-      console.log(
-        `Received ${req.files.length} weekly report(s)`
-      );
-
       // ======================================
-      // EXTRACT TEXT
+      // CHECK GEMINI API KEY
       // ======================================
 
-      const reports =
-        [];
+      if (!process.env.GEMINI_API_KEY) {
+        throw new Error(
+          "GEMINI_API_KEY is missing from the backend .env file."
+        );
+      }
+
+      // ======================================
+      // EXTRACT ALL REPORTS
+      // ======================================
+
+      const reports = [];
 
       for (
-        const file of req.files
+        let index = 0;
+        index < uploadedFiles.length;
+        index++
       ) {
+        const file =
+          uploadedFiles[index];
 
         console.log(
-          `Extracting text from: ${file.originalname}`
+          `Extracting report ${index + 1}/${uploadedFiles.length}`
         );
 
         const text =
-          await extractText(
-            file
-          );
+          await extractText(file);
 
         if (
           !text ||
           !text.trim()
         ) {
-
           throw new Error(
             `${file.originalname} does not contain readable text.`
           );
-
         }
 
-        reports.push(
-          {
-            filename:
-              file.originalname,
+        reports.push({
+          filename:
+            file.originalname,
+          content:
+            text.trim(),
+        });
 
-            content:
-              text.trim(),
-          }
+        console.log(
+          `Extracted ${text.length} characters from ${file.originalname}`
         );
-
       }
-
-      console.log(
-        "Text extraction completed successfully."
-      );
 
       // ======================================
       // COMBINE REPORTS
@@ -341,258 +301,336 @@ app.post(
       const combinedReports =
         reports
           .map(
-            (
-              report,
-              index
-            ) => {
+            (report, index) => `
+============================================================
+SOURCE WEEKLY REPORT ${index + 1}
+============================================================
 
-              return `
-========================================
-WEEKLY REPORT ${index + 1}
-FILE: ${report.filename}
-========================================
+SOURCE FILE:
+${report.filename}
+
+------------------------------------------------------------
+REPORT CONTENT
+------------------------------------------------------------
 
 ${report.content}
 
-========================================
-END OF WEEKLY REPORT ${index + 1}
-========================================
-`;
-
-            }
+------------------------------------------------------------
+END OF SOURCE WEEKLY REPORT ${index + 1}
+------------------------------------------------------------
+`
           )
-          .join(
-            "\n"
-          );
+          .join("\n");
 
       // ======================================
-      // AI PROMPT
+      // GEMINI PROMPT
       // ======================================
 
       const prompt = `
-You are an expert professional business report editor.
+You are an expert professional business and cybersecurity report editor.
 
-Your task is to take multiple weekly reports and create ONE complete, professional MONTHLY REPORT by intelligently MERGING and CONSOLIDATING all of them.
+Your task is to create ONE complete, professional MONTHLY REPORT by intelligently merging and consolidating ALL provided weekly reports.
 
-This is NOT a simple summarization task.
+This is a CONSOLIDATION task.
 
-The purpose is to combine the actual work performed during all weeks into one complete monthly report.
+It is NOT a creative writing task.
 
-==================================================
-IMPORTANT INSTRUCTIONS
-==================================================
+It is NOT a task where you should guess missing information.
 
-1. READ AND ANALYZE ALL PROVIDED WEEKLY REPORTS.
+It is NOT a task where you should invent recommendations and present them as completed work.
 
-2. MERGE the information from ALL weekly reports into ONE complete monthly report.
+============================================================
+ABSOLUTE FACTUAL ACCURACY RULES
+============================================================
 
-3. DO NOT simply create a short summary of the reports.
+1. Read and analyze EVERY source weekly report completely.
 
-4. PRESERVE important information and meaningful details from EVERY uploaded report.
+2. Use ONLY information actually present in the provided weekly reports.
 
-5. Include relevant information about:
+3. DO NOT invent facts.
 
-- Tasks completed
-- Tasks started
-- Features developed
-- Features improved
-- Technical work
-- Implementation details
-- Testing
-- Bug fixes
-- Improvements
+4. DO NOT invent:
+- IP addresses
+- Host addresses
+- Dates
+- Numbers
+- Percentages
+- Statistics
+- Bandwidth values
+- Session counts
+- Application names
+- Technology names
+- Threat names
+- Security events
+- Countries
+- Websites
+- Tasks
 - Achievements
 - Challenges
-- Problems
 - Solutions
-- Progress
-- Pending tasks
+- Results
 - Future work
 
-6. If the same task appears in multiple weeks, do not unnecessarily repeat it.
+5. Preserve numbers exactly as they appear in the source reports.
 
-Instead, combine the information into one logical description.
+6. Never change numbers because they look more reasonable.
 
-7. If a task progressed over multiple weeks, describe the complete progression.
+7. Never add digits to numbers.
 
-Example:
+8. Never remove digits from numbers.
 
-Week 1:
-Login page created.
+9. Never invent an IP address.
 
-Week 2:
-Login page connected to backend.
+10. Every IP address in the final report must come directly from the source reports.
 
-Week 3:
-Authentication validation added.
+11. Preserve application names exactly as provided.
 
-Week 4:
-Authentication bugs fixed.
+12. Preserve threat names exactly as provided.
 
-Merge these into a complete description explaining the progression of the authentication system.
+13. Preserve security event names exactly as provided.
 
-8. DO NOT remove important technical details just to make the report shorter.
+14. Preserve dates and reporting periods based only on source information.
 
-9. If information appears in only one weekly report, preserve it.
+============================================================
+FACT VS INTERPRETATION
+============================================================
 
-10. Use ONLY information provided in the weekly reports.
+Clearly distinguish between:
 
-11. DO NOT invent information.
+A. Facts directly supported by the source reports.
 
-Never invent:
+B. Analysis based on those facts.
 
-- Tasks
-- Features
-- Technologies
-- Achievements
-- Statistics
-- Dates
-- Results
-- Problems
-- Solutions
+C. Recommendations or suggested next steps.
 
-12. Remove only unnecessary repetition.
+Never present an AI-generated recommendation as a completed task.
 
-13. Organize related work together logically.
+For example:
 
-14. Maintain chronological progress where useful.
+BAD:
+"Blocked SuperVPN."
 
-15. Use professional business and technical writing.
+If the source only says SuperVPN was detected, this is incorrect.
 
-16. The final report must represent the COMPLETE work performed during the month.
+GOOD:
+"SuperVPN was identified among the observed high-risk applications."
 
-==================================================
+If you want to suggest blocking it, write:
+
+"Recommendation: Review whether SuperVPN should be restricted according to the organization's security policy."
+
+============================================================
+NO OVERSTATEMENT
+============================================================
+
+Do not make stronger claims than the source data supports.
+
+If the source reports SSL/TLS traffic, do not write:
+"Maintained 100% visibility into encrypted traffic."
+
+Instead write:
+"SSL/TLS traffic was observed in the reported network activity."
+
+If the source says:
+"No Data Leak"
+
+Do not automatically write:
+"Data leak prevention was successfully achieved."
+
+Instead write:
+"No Data Leak events were reported in the provided data."
+
+============================================================
+MONTHLY CONSOLIDATION
+============================================================
+
+1. Merge ALL weekly reports into one complete monthly report.
+
+2. Preserve meaningful information from EVERY uploaded report.
+
+3. Do NOT reduce the report to a short summary.
+
+4. The final report should represent the complete work and observed activity across the entire reporting period.
+
+5. If the same information appears multiple times, avoid unnecessary repetition.
+
+6. If a metric changes from one week to another, preserve weekly values and explain the trend.
+
+7. If a task or activity progresses across multiple weeks, describe the progression accurately.
+
+8. Preserve unique information that appears in only one weekly report.
+
+9. Do not merge different IP addresses into one.
+
+10. Do not merge different applications into one.
+
+11. Do not merge different threat events into one.
+
+============================================================
 REPORT STRUCTURE
-==================================================
+============================================================
 
 # MONTHLY PROGRESS REPORT
 
 ## 1. MONTHLY OVERVIEW
 
-Provide a short overview of the overall work performed during the month.
+Provide a concise overview of the reporting period.
 
-This should only introduce the major areas of work.
+Mention only major activities, observations, trends, and areas supported by the weekly reports.
 
-Do not replace the detailed report with a short summary.
+## 2. CONSOLIDATED WORK AND ACTIVITY OVERVIEW
 
-==================================================
+Consolidate ALL meaningful information from ALL weekly reports.
 
-## 2. CONSOLIDATED WORK COMPLETED
+Group related information logically.
 
-This is the most important section.
+Use relevant subsections supported by the source reports, such as:
 
-Merge ALL meaningful work from ALL weekly reports.
+### Network and Bandwidth Activity
 
-Group related tasks and activities together.
+### Application Usage
 
-For each major area of work:
+### VPN Activity
 
-- Explain what was done.
-- Include important technical details.
-- Explain how the work progressed.
-- Combine related activities from different weeks.
-- Preserve important details from the original reports.
+### Security and Threat Events
 
-This section must represent the complete work performed during the month.
+### High-Risk Applications
 
-==================================================
+### Web and Internet Activity
+
+### Host and IP Activity
+
+### Geographic Activity
+
+### Data Leak Events
+
+Only include subsections supported by the source reports.
+
+For every subsection:
+
+- Preserve important numerical values.
+- Preserve technical details.
+- Explain trends accurately.
+- Do not invent information.
+- Do not overstate conclusions.
 
 ## 3. WEEK-BY-WEEK PROGRESS
 
-Provide a chronological view of the work performed in each uploaded report.
+Provide a chronological summary of each uploaded weekly report.
 
 Use:
 
 ### Week 1
 
-Describe the important work performed during Week 1.
-
 ### Week 2
-
-Describe the important work performed during Week 2.
 
 ### Week 3
 
-Describe the important work performed during Week 3.
-
 ### Week 4
 
-Describe the important work performed during Week 4.
+Only include weeks that actually exist.
 
-If fewer than four reports are uploaded, include only the available weeks.
+For each week:
 
-Do not unnecessarily repeat long explanations already provided in the Consolidated Work Completed section.
+- Preserve important metrics.
+- Preserve technical information.
+- Preserve security events.
+- Preserve applications.
+- Preserve hosts/IP addresses.
+- Do not invent information.
 
-==================================================
+## 4. KEY FINDINGS AND ACHIEVEMENTS
 
-## 4. KEY ACHIEVEMENTS
+List important findings or achievements directly supported by the weekly reports.
 
-List the important achievements completed during the month.
+Use precise wording such as:
 
-Use only information supported by the weekly reports.
+- Observed
+- Recorded
+- Detected
+- Identified
+- Monitored
+- Reported
 
-==================================================
+Avoid unsupported claims such as:
+
+- Successfully prevented
+- Successfully blocked
+- Fully secured
+- 100% visibility
+- Completely mitigated
+
+unless explicitly supported by the source.
 
 ## 5. CHALLENGES AND SOLUTIONS
 
-Describe:
+Describe challenges and solutions ONLY when explicitly mentioned or clearly documented.
 
-- Challenges encountered
-- Problems identified
-- Solutions implemented
-- Actions taken to resolve issues
-
-Use only information from the weekly reports.
-
-If no challenges are mentioned, write:
+If no challenges are documented, write:
 
 "No specific challenges were documented in the provided weekly reports."
 
-==================================================
+## 6. RECOMMENDATIONS AND NEXT STEPS
 
-## 6. PENDING WORK AND NEXT STEPS
+Only include recommendations when useful and clearly label them as recommendations.
 
-Include:
+Recommendations are NOT completed tasks.
 
-- Unfinished tasks
-- Tasks still in progress
-- Planned improvements
-- Future priorities
-- Next steps
-
-Use only information from the weekly reports.
-
-If no future work is mentioned, write:
+If no future work or recommendations are supported, write:
 
 "No specific future work was documented in the provided weekly reports."
 
-==================================================
-
 ## 7. MONTHLY CONCLUSION
 
-Provide a short professional conclusion describing the overall progress achieved during the month.
+Provide a short professional conclusion.
 
-==================================================
-FINAL REQUIREMENT
-==================================================
+The conclusion must summarize only information supported by the weekly reports.
 
-The final output MUST be a COMPLETE CONSOLIDATED MONTHLY REPORT.
+Do not introduce new facts.
 
-It must NOT be a short summary.
+============================================================
+FINAL QUALITY CONTROL
+============================================================
 
-It must preserve meaningful work, technical details, progress, achievements, challenges, and future tasks from ALL uploaded reports.
+Before returning the final report:
 
-The goal is to intelligently MERGE and ORGANIZE the weekly reports into ONE professional monthly report.
+- Verify every important number against the source.
+- Verify all IP addresses.
+- Verify application names.
+- Verify threat names.
+- Verify security event names.
+- Verify dates.
+- Verify calculated totals.
+- Ensure recommendations are clearly separated from completed work.
+- Ensure no unsupported claims are made.
+- Ensure unique information from every weekly report is preserved.
+- Ensure observations are not incorrectly presented as achievements.
 
-Do not invent information.
+ACCURACY IS MORE IMPORTANT THAN CREATIVITY.
 
-Here are the weekly reports:
+DO NOT INVENT INFORMATION.
+
+DO NOT CHANGE NUMBERS.
+
+DO NOT INVENT IP ADDRESSES.
+
+DO NOT PRESENT RECOMMENDATIONS AS COMPLETED WORK.
+
+============================================================
+SOURCE WEEKLY REPORTS
+============================================================
 
 ${combinedReports}
+
+============================================================
+END OF SOURCE WEEKLY REPORTS
+============================================================
+
+Now generate the final complete monthly report.
 `;
 
       // ======================================
-      // SEND TO GEMINI
+      // CALL GEMINI
       // ======================================
 
       console.log(
@@ -600,18 +638,15 @@ ${combinedReports}
       );
 
       const response =
-        await ai.models.generateContent(
-          {
-            model:
-              "gemini-3-flash-preview",
+        await ai.models.generateContent({
+          model:
+            "gemini-3-flash-preview",
 
-            contents:
-              prompt,
-          }
-        );
+          contents: prompt,
+        });
 
       // ======================================
-      // GET GENERATED REPORT
+      // GET REPORT
       // ======================================
 
       const monthlyReport =
@@ -621,227 +656,183 @@ ${combinedReports}
         !monthlyReport ||
         !monthlyReport.trim()
       ) {
-
         throw new Error(
           "Gemini returned an empty report."
         );
-
       }
 
       console.log(
-        "Gemini monthly report generated successfully."
+        "Monthly report generated successfully."
       );
 
       // ======================================
-      // CLEANUP TEMP FILES
+      // CLEANUP
       // ======================================
 
       cleanupFiles(
-        req.files
+        uploadedFiles
       );
 
       // ======================================
-      // SEND SUCCESS RESPONSE
+      // SEND RESPONSE
       // ======================================
 
-      return res.json(
-        {
-          success:
-            true,
+      return res.status(200).json({
+        success: true,
 
-          message:
-            "Monthly report generated successfully.",
+        message:
+          "Monthly report generated successfully.",
 
-          aiProvider:
-            "Google Gemini",
+        aiProvider:
+          "Google Gemini",
 
-          model:
-            "gemini-3-flash-preview",
+        model:
+          "gemini-3-flash-preview",
 
-          filesProcessed:
-            req.files.length,
+        filesProcessed:
+          uploadedFiles.length,
 
-          report:
-            monthlyReport,
-        }
-      );
-
-    } catch (
-      error
-    ) {
-
+        report:
+          monthlyReport,
+      });
+    } catch (error) {
       console.error(
-        "\nREPORT GENERATION ERROR:"
+        "\n========================================"
       );
 
       console.error(
-        error
+        "REPORT GENERATION ERROR"
       );
 
-      // ======================================
-      // CLEANUP FILES
-      // ======================================
+      console.error(
+        "========================================"
+      );
 
+      console.error(error);
+
+      // Cleanup uploaded files
       cleanupFiles(
-        req.files
+        uploadedFiles
       );
 
-      // ======================================
-      // SAFE ERROR MESSAGE
-      // ======================================
+      const errorMessage =
+        error?.message ||
+        "Unknown server error occurred.";
 
-      let errorMessage =
-        "Failed to generate monthly report.";
+      return res.status(500).json({
+        success: false,
 
-      if (
-        error &&
-        typeof error.message ===
-          "string"
-      ) {
+        message:
+          "Failed to generate monthly report.",
 
-        errorMessage =
-          error.message;
-
-      }
-
-      // ======================================
-      // SEND ERROR
-      // ======================================
-
-      return res
-        .status(500)
-        .json(
-          {
-            success:
-              false,
-
-            message:
-              "Failed to generate monthly report.",
-
-            error:
-              errorMessage,
-          }
-        );
-
+        error:
+          String(errorMessage),
+      });
     }
-
   }
 );
 
 // ==========================================
-// 404 HANDLER
+// MULTER / UPLOAD ERROR HANDLER
 // ==========================================
 
 app.use(
-  (
-    req,
-    res
-  ) => {
-
-    res
-      .status(404)
-      .json(
-        {
-          success:
-            false,
-
-          message:
-            `Route not found: ${req.method} ${req.originalUrl}`,
-        }
-      );
-
-  }
-);
-
-// ==========================================
-// GENERAL ERROR HANDLER
-// ==========================================
-
-app.use(
-  (
-    error,
-    req,
-    res,
-    next
-  ) => {
-
+  (error, req, res, next) => {
     console.error(
       "SERVER ERROR:",
       error
     );
 
-    return res
-      .status(500)
-      .json(
-        {
-          success:
-            false,
-
-          message:
-            "Internal server error.",
-
+    if (
+      error instanceof multer.MulterError
+    ) {
+      if (
+        error.code ===
+        "LIMIT_FILE_SIZE"
+      ) {
+        return res.status(400).json({
+          success: false,
           error:
-            error.message ||
-            "Unknown error",
-        }
-      );
+            "File is too large. Maximum size is 10 MB.",
+        });
+      }
 
+      if (
+        error.code ===
+        "LIMIT_FILE_COUNT"
+      ) {
+        return res.status(400).json({
+          success: false,
+          error:
+            "Maximum 4 files are allowed.",
+        });
+      }
+
+      return res.status(400).json({
+        success: false,
+        error:
+          error.message,
+      });
+    }
+
+    return res.status(500).json({
+      success: false,
+      error:
+        error.message ||
+        "Internal server error.",
+    });
   }
 );
 
 // ==========================================
-// LOCAL SERVER
+// START SERVER
 // ==========================================
 
-// When running:
-// node server.js
-//
-// The server will run on:
-// http://localhost:5000
-//
-// When deployed on Vercel,
-// Vercel will use the exported app
-// through backend/api/index.js.
+app.listen(
+  PORT,
+  () => {
+    console.log(
+      "\n========================================"
+    );
 
-if (
-  require.main === module
-) {
+    console.log(
+      "AI MONTHLY REPORT GENERATOR"
+    );
 
-  app.listen(
-    PORT,
-    () => {
+    console.log(
+      "========================================"
+    );
 
-      console.log(
-        `\nServer running at http://localhost:${PORT}`
-      );
+    console.log(
+      `Backend running at: http://localhost:${PORT}`
+    );
 
-      console.log(
-        "AI Provider: Google Gemini"
-      );
+    console.log(
+      `Health check: http://localhost:${PORT}/api/health`
+    );
 
-      console.log(
-        "AI Model: gemini-3-flash-preview"
-      );
+    console.log(
+      "AI Provider: Google Gemini"
+    );
 
-      console.log(
-        "Supported files: PDF, DOCX, TXT"
-      );
+    console.log(
+      "AI Model: gemini-3-flash-preview"
+    );
 
-      console.log(
-        "Maximum reports: 4"
-      );
+    console.log(
+      "Supported files: PDF, DOCX, TXT"
+    );
 
-      console.log(
-        "Mode: Monthly Report Consolidation"
-      );
+    console.log(
+      "Maximum reports: 4"
+    );
 
-    }
-  );
+    console.log(
+      "Maximum file size: 10 MB"
+    );
 
-}
-
-// ==========================================
-// EXPORT APP FOR VERCEL
-// ==========================================
-
-module.exports = app;
+    console.log(
+      "========================================\n"
+    );
+  }
+);

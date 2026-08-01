@@ -1,23 +1,111 @@
-import { useState } from "react";
-import axios from "axios";
+import { useState, useRef } from "react";
+import { motion } from "framer-motion";
 import "./App.css";
+import {
+  UploadIcon,
+  SparkleIcon,
+  CompassIcon,
+  LayersIcon,
+  CalendarIcon,
+  CheckBadgeIcon,
+  AlertIcon,
+  ArrowNextIcon,
+  FlagIcon,
+  DocIcon,
+  CopyIcon,
+  DownloadIcon,
+  TrashIcon,
+  ShieldIcon,
+  ClockIcon,
+  TargetIcon,
+  BuildingIcon,
+  StarIcon,
+  FolderIcon,
+  BotIcon,
+  PercentIcon,
+} from "./icons.jsx";
+import {
+  parseReport,
+  splitInlineBold,
+  countWeeks,
+  wordCount,
+  readingTime,
+  colorForSection,
+  sectionWordCount,
+  computeCompletion,
+  computeQuality,
+} from "./reportParser.js";
+import { exportDashboardPdf } from "./pdfExport.js";
+
+const SECTION_ICONS = {
+  compass: CompassIcon,
+  layers: LayersIcon,
+  calendar: CalendarIcon,
+  check: CheckBadgeIcon,
+  alert: AlertIcon,
+  arrow: ArrowNextIcon,
+  flag: FlagIcon,
+  doc: DocIcon,
+};
+
+const FILE_BADGES = {
+  pdf: { label: "PDF", className: "badge-pdf" },
+  docx: { label: "DOC", className: "badge-docx" },
+  txt: { label: "TXT", className: "badge-txt" },
+};
+
+const EXPECTED_WEEKS = 4;
+
+function getExtension(filename) {
+  return filename.split(".").pop().toLowerCase();
+}
+
+// A small presentational card used across the KPI grid — kept local to
+// this file since it's only ever used here.
+function KpiCard({ icon: Icon, color, label, value, sub, index }) {
+  return (
+    <motion.div
+      className={`kpi-card kpi-${color}`}
+      initial={{ opacity: 0, y: 14 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.35, delay: index * 0.05 }}
+      whileHover={{ y: -4 }}
+    >
+      <div className="kpi-icon">
+        <Icon />
+      </div>
+      <div className="kpi-body">
+        <span className="kpi-value">{value}</span>
+        <span className="kpi-label">{label}</span>
+        {sub ? <span className="kpi-sub">{sub}</span> : null}
+      </div>
+    </motion.div>
+  );
+}
 
 function App() {
   const [files, setFiles] = useState([]);
   const [report, setReport] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [generatedAt, setGeneratedAt] = useState(null);
+  const [reportMeta, setReportMeta] = useState(null);
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [exportingPdf, setExportingPdf] = useState(false);
 
-  // Backend Vercel URL
-  const BACKEND_URL =
-    "https://ai-monthly-report-generator-1iwl.vercel.app";
+  const coverRef = useRef(null);
 
   // ==========================================
-  // HANDLE FILE SELECTION
+  // BACKEND URL
+  // ==========================================
+
+  const BACKEND_URL = "http://localhost:5000";
+
+  // ==========================================
+  // FILE SELECTION
   // ==========================================
 
   const handleFileChange = (event) => {
-    const selectedFiles = Array.from(event.target.files);
+    const selectedFiles = Array.from(event.target.files || []);
 
     setError("");
 
@@ -25,33 +113,16 @@ function App() {
       return;
     }
 
-    // Maximum 4 files
     if (files.length + selectedFiles.length > 4) {
       setError("You can upload a maximum of 4 weekly reports.");
       event.target.value = "";
       return;
     }
 
-    // Maximum 10 MB per file
-    const oversizedFile = selectedFiles.find(
-      (file) => file.size > 10 * 1024 * 1024
-    );
-
-    if (oversizedFile) {
-      setError(
-        `${oversizedFile.name} is larger than 10 MB. Please upload a smaller file.`
-      );
-      event.target.value = "";
-      return;
-    }
-
-    // Allowed extensions
     const allowedExtensions = [".pdf", ".docx", ".txt"];
 
     const invalidFile = selectedFiles.find((file) => {
-      const extension =
-        "." + file.name.split(".").pop().toLowerCase();
-
+      const extension = "." + file.name.split(".").pop().toLowerCase();
       return !allowedExtensions.includes(extension);
     });
 
@@ -61,42 +132,29 @@ function App() {
       return;
     }
 
-    // Add files
-    setFiles((previousFiles) => [
-      ...previousFiles,
-      ...selectedFiles,
-    ]);
+    const oversizedFile = selectedFiles.find(
+      (file) => file.size > 10 * 1024 * 1024
+    );
 
-    // Reset input
+    if (oversizedFile) {
+      setError(`${oversizedFile.name} is larger than 10 MB.`);
+      event.target.value = "";
+      return;
+    }
+
+    setFiles((previousFiles) => [...previousFiles, ...selectedFiles]);
     event.target.value = "";
   };
 
-  // ==========================================
-  // REMOVE FILE
-  // ==========================================
-
   const removeFile = (indexToRemove) => {
     setFiles((previousFiles) =>
-      previousFiles.filter(
-        (_, index) => index !== indexToRemove
-      )
+      previousFiles.filter((_, index) => index !== indexToRemove)
     );
-
     setError("");
   };
 
   // ==========================================
-  // CLEAR ALL
-  // ==========================================
-
-  const clearAll = () => {
-    setFiles([]);
-    setReport("");
-    setError("");
-  };
-
-  // ==========================================
-  // GENERATE MONTHLY REPORT
+  // GENERATE REPORT
   // ==========================================
 
   const generateReport = async () => {
@@ -108,155 +166,245 @@ function App() {
     setLoading(true);
     setError("");
     setReport("");
+    setReportMeta(null);
 
     const formData = new FormData();
-
-    files.forEach((file) => {
-      formData.append("reports", file);
-    });
+    files.forEach((file) => formData.append("reports", file));
 
     try {
-      console.log("Sending reports to backend...");
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5 * 60 * 1000);
 
-      const response = await axios.post(
-        `${BACKEND_URL}/api/generate-report`,
-        formData,
-        {
-          headers: {
-            "Content-Type": "multipart/form-data",
-          },
-          timeout: 300000,
-        }
-      );
+      const response = await fetch(`${BACKEND_URL}/api/generate-report`, {
+        method: "POST",
+        body: formData,
+        signal: controller.signal,
+      });
 
-      console.log("Backend response:", response.data);
+      clearTimeout(timeoutId);
 
-      if (response.data && response.data.success) {
-        const generatedReport = response.data.report;
+      let data;
+      try {
+        data = await response.json();
+      } catch {
+        throw new Error("Backend returned an invalid response.");
+      }
 
-        if (typeof generatedReport === "string") {
-          setReport(generatedReport);
-        } else {
-          setReport(
-            JSON.stringify(generatedReport, null, 2)
-          );
-        }
+      if (!response.ok) {
+        throw new Error(
+          data?.error || data?.message || `Server error: ${response.status}`
+        );
+      }
+
+      if (data?.success) {
+        setReport(String(data.report || ""));
+        setGeneratedAt(new Date());
+        setReportMeta({
+          aiProvider: data.aiProvider || "Google Gemini",
+          model: data.model || "",
+          filesProcessed: data.filesProcessed || files.length,
+        });
+        setError("");
       } else {
         setError(
-          response.data?.message ||
-            response.data?.error ||
-            "Failed to generate monthly report."
+          String(data?.error || data?.message || "Failed to generate report.")
         );
       }
     } catch (error) {
-      console.error(
-        "REPORT GENERATION ERROR:",
-        error
-      );
+      let errorMessage = "Something went wrong while generating the report.";
 
-      let errorMessage =
-        "Something went wrong while generating the report.";
-
-      if (error.response) {
-        const data = error.response.data;
-
-        if (typeof data?.error === "string") {
-          errorMessage = data.error;
-        } else if (
-          typeof data?.message === "string"
-        ) {
-          errorMessage = data.message;
-        } else if (typeof data === "string") {
-          errorMessage = data;
-        } else {
-          errorMessage = `Server error (${error.response.status}).`;
-        }
-      } else if (error.request) {
+      if (error.name === "AbortError") {
+        errorMessage = "The request took too long. Please try again.";
+      } else if (
+        error instanceof TypeError &&
+        error.message.toLowerCase().includes("fetch")
+      ) {
         errorMessage =
-          "Could not connect to the backend server. Please check that the backend is running.";
+          "Cannot connect to backend. Make sure your backend server is running on http://localhost:5000.";
       } else if (error.message) {
         errorMessage = error.message;
       }
 
-      setError(String(errorMessage));
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
   };
 
-  // ==========================================
-  // COPY REPORT
-  // ==========================================
-
   const copyReport = async () => {
-    if (!report) {
-      return;
-    }
-
+    if (!report) return;
     try {
       await navigator.clipboard.writeText(report);
       alert("Monthly report copied to clipboard!");
-    } catch (error) {
-      console.error("Copy error:", error);
+    } catch {
       setError("Could not copy the report.");
     }
   };
 
-  // ==========================================
-  // DOWNLOAD REPORT
-  // ==========================================
-
-  const downloadReport = () => {
-    if (!report) {
-      return;
-    }
-
+  const exportPdf = async () => {
+    if (!report || !parsed) return;
+    setExportingPdf(true);
     try {
-      const blob = new Blob(
-        [report],
-        {
-          type: "text/plain;charset=utf-8",
-        }
-      );
-
-      const url = URL.createObjectURL(blob);
-
-      const link = document.createElement("a");
-
-      link.href = url;
-      link.download = "monthly-report.txt";
-
-      document.body.appendChild(link);
-
-      link.click();
-
-      document.body.removeChild(link);
-
-      URL.revokeObjectURL(url);
-    } catch (error) {
-      console.error("Download error:", error);
-      setError("Could not download the report.");
+      await exportDashboardPdf({
+        coverEl: coverRef.current,
+        parsed,
+        meta: {
+          docTitle: parsed.docTitle,
+          filesProcessed: reportMeta?.filesProcessed ?? files.length,
+          aiProvider: reportMeta?.aiProvider || "Google Gemini",
+          words,
+          readingTime: readingMin,
+          weeksMerged,
+          completionPct,
+          quality,
+          timeline,
+        },
+      });
+    } catch {
+      setError("Could not generate the PDF. Please try again.");
+    } finally {
+      setExportingPdf(false);
     }
   };
 
-  // ==========================================
-  // FORMAT FILE SIZE
-  // ==========================================
+  const clearAll = () => {
+    setFiles([]);
+    setReport("");
+    setReportMeta(null);
+    setError("");
+  };
 
   const formatFileSize = (bytes) => {
-    if (bytes < 1024) {
-      return `${bytes} B`;
-    }
-
-    if (bytes < 1024 * 1024) {
-      return `${(bytes / 1024).toFixed(1)} KB`;
-    }
-
-    return `${(
-      bytes /
-      (1024 * 1024)
-    ).toFixed(1)} MB`;
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
+
+  // ==========================================
+  // REPORT STRUCTURE (parsed once per report)
+  // ==========================================
+
+  const parsed = report ? parseReport(report) : null;
+  const weeksMerged = parsed ? countWeeks(parsed.sections) : 0;
+  const words = report ? wordCount(report) : 0;
+  const readingMin = report ? readingTime(words) : 0;
+  const completionPct = parsed ? computeCompletion(parsed.sections) : 0;
+  const quality = parsed
+    ? computeQuality(parsed.sections, words, completionPct)
+    : { score: 0, label: "\u2014", grade: "\u2014" };
+
+  const weeksComplete = Math.min(
+    weeksMerged || reportMeta?.filesProcessed || files.length,
+    EXPECTED_WEEKS
+  );
+  const timeline = Array.from({ length: EXPECTED_WEEKS }, (_, i) => ({
+    label: `Week ${i + 1}`,
+    complete: i < weeksComplete,
+  }));
+
+  const completionColor =
+    completionPct >= 80 ? "green" : completionPct >= 50 ? "orange" : "red";
+
+  const kpiCards = parsed
+    ? [
+        {
+          icon: FolderIcon,
+          color: "blue",
+          label: "Files Processed",
+          value: reportMeta?.filesProcessed ?? files.length,
+        },
+        {
+          icon: BotIcon,
+          color: "purple",
+          label: "AI Provider",
+          value: reportMeta?.aiProvider || "Google Gemini",
+          sub: reportMeta?.model,
+        },
+        {
+          icon: TargetIcon,
+          color: "green",
+          label: "Completion Status",
+          value: "Completed",
+        },
+        {
+          icon: LayersIcon,
+          color: "teal",
+          label: "Generated Sections",
+          value: parsed.sections.length,
+        },
+        {
+          icon: DocIcon,
+          color: "orange",
+          label: "Word Count",
+          value: words.toLocaleString(),
+        },
+        {
+          icon: ClockIcon,
+          color: "gray",
+          label: "Reading Time",
+          value: `${readingMin} min`,
+        },
+        {
+          icon: StarIcon,
+          color: "gold",
+          label: "Report Quality",
+          value: quality.grade,
+          sub: quality.label,
+        },
+        {
+          icon: PercentIcon,
+          color: completionColor,
+          label: "Completion",
+          value: `${completionPct}%`,
+        },
+      ]
+    : [];
+
+  // ==========================================
+  // INLINE TEXT RENDER (handles **bold**)
+  // ==========================================
+
+  const renderInline = (text) =>
+    splitInlineBold(text).map((part, i) =>
+      typeof part === "string" ? (
+        <span key={i}>{part}</span>
+      ) : (
+        <strong key={i}>{part.bold}</strong>
+      )
+    );
+
+  const renderBlocks = (blocks) =>
+    blocks.map((block, i) => {
+      if (block.type === "p") {
+        return (
+          <p className="block-p" key={i}>
+            {renderInline(block.text)}
+          </p>
+        );
+      }
+      if (block.type === "list") {
+        return (
+          <ul className="block-list" key={i}>
+            {block.items.map((item, j) => (
+              <li key={j}>{renderInline(item)}</li>
+            ))}
+          </ul>
+        );
+      }
+      if (block.type === "subsection") {
+        const isWeek = /^week\s*\d+/i.test(block.title);
+        return (
+          <div
+            className={isWeek ? "subsection week-node" : "subsection"}
+            key={i}
+          >
+            <h4>{block.title}</h4>
+            {renderBlocks(block.blocks)}
+          </div>
+        );
+      }
+      return null;
+    });
 
   // ==========================================
   // UI
@@ -264,321 +412,306 @@ function App() {
 
   return (
     <div className="app">
-
-      {/* HEADER */}
-
       <header className="header">
         <div className="brand">
-
           <div className="brand-icon">
-            AI
+            <ShieldIcon />
           </div>
-
           <div>
-            <h1>
-              Monthly Report Generator
-            </h1>
-
-            <p>
-              Transform weekly reports into
-              professional monthly insights
-            </p>
+            <h1>AI Monthly Report Generator</h1>
+            <p>Weekly reports in. One structured monthly report out.</p>
           </div>
-
         </div>
-
-        <div className="ai-badge">
-          ✨ Powered by Gemini AI
-        </div>
+        <span className="ai-badge">
+          <SparkleIcon /> Powered by Gemini AI
+        </span>
       </header>
 
-
-      {/* MAIN */}
-
       <main className="container">
-
-        {/* HERO */}
-
         <section className="hero">
-
-          <div className="hero-badge">
-            AI-Powered Reporting
-          </div>
-
+          <span className="hero-eyebrow">Report automation</span>
           <h2>
-            Turn 4 weeks of work into
-            <span> one professional report.</span>
+            Turn a month of weekly notes into <span>one clear report</span>
           </h2>
-
           <p>
-            Upload your weekly reports and let
-            AI intelligently merge and consolidate
-            your work into one complete monthly report.
+            Upload your weekly reports and let AI merge your progress,
+            achievements, challenges, and priorities into a single monthly
+            report &mdash; rendered here as a structured, readable dossier
+            instead of a wall of text.
           </p>
 
+          <ol className="hero-steps">
+            <li>
+              <span className="step-num">01</span>
+              <span className="step-label">Upload weekly reports</span>
+            </li>
+            <li>
+              <span className="step-num">02</span>
+              <span className="step-label">AI merges &amp; verifies facts</span>
+            </li>
+            <li>
+              <span className="step-num">03</span>
+              <span className="step-label">Read, copy, or export as PDF</span>
+            </li>
+          </ol>
         </section>
 
-
-        {/* UPLOAD CARD */}
-
         <section className="card">
-
           <div className="section-title">
-
             <div>
-              <h3>
-                Upload Weekly Reports
-              </h3>
-
-              <p>
-                Add up to 4 reports for the month
-              </p>
+              <h3>Upload Weekly Reports</h3>
+              <p>PDF, DOCX, or TXT &middot; up to 4 files &middot; 10 MB each</p>
             </div>
-
-            <span className="file-count">
-              {files.length}/4
-            </span>
-
+            {files.length > 0 && (
+              <span className="file-count">{files.length}/4 selected</span>
+            )}
           </div>
 
-
-          {/* UPLOAD AREA */}
-
-          <label
-            className="upload-area"
-            htmlFor="file-upload"
-          >
-
+          <label className="upload-area">
             <div className="upload-icon">
-              ↑
+              <UploadIcon />
             </div>
-
-            <h4>
-              Click to upload reports
-            </h4>
-
-            <p>
-              PDF, DOCX or TXT
-            </p>
-
-            <span>
-              Maximum 4 files • 10 MB each
-            </span>
-
+            <strong>Click to upload reports</strong>
+            <p>or drag files into this area</p>
+            <span>PDF, DOCX, or TXT &middot; maximum 4 files &middot; 10 MB each</span>
             <input
-              id="file-upload"
               type="file"
               multiple
               accept=".pdf,.docx,.txt"
               onChange={handleFileChange}
-              disabled={
-                files.length >= 4 ||
-                loading
-              }
+              disabled={files.length >= 4 || loading}
             />
-
           </label>
 
-
-          {/* SELECTED FILES */}
-
           {files.length > 0 && (
-
             <div className="file-list">
-
               <div className="file-list-header">
-
-                <h4>
-                  Selected Reports
-                </h4>
-
-                <button
-                  type="button"
-                  onClick={clearAll}
-                  disabled={loading}
-                >
-                  Clear All
+                <h4>Selected Reports</h4>
+                <button type="button" onClick={clearAll} disabled={loading}>
+                  Clear all
                 </button>
-
               </div>
 
-
-              {files.map((file, index) => (
-
-                <div
-                  className="file-item"
-                  key={`${file.name}-${index}`}
-                >
-
-                  <div className="file-info">
-
-                    <div className="file-icon">
-                      📄
+              {files.map((file, index) => {
+                const ext = getExtension(file.name);
+                const badge = FILE_BADGES[ext] || {
+                  label: ext.toUpperCase(),
+                  className: "badge-generic",
+                };
+                return (
+                  <div className="file-item" key={`${file.name}-${index}`}>
+                    <div className="file-info">
+                      <span className={`file-badge ${badge.className}`}>
+                        {badge.label}
+                      </span>
+                      <div>
+                        <strong>{file.name}</strong>
+                        <small>{formatFileSize(file.size)}</small>
+                      </div>
                     </div>
-
-                    <div>
-
-                      <strong>
-                        {file.name}
-                      </strong>
-
-                      <small>
-                        {formatFileSize(file.size)}
-                      </small>
-
-                    </div>
-
+                    <button
+                      type="button"
+                      className="remove-button"
+                      onClick={() => removeFile(index)}
+                      disabled={loading}
+                      aria-label={`Remove ${file.name}`}
+                    >
+                      <TrashIcon />
+                    </button>
                   </div>
-
-
-                  <button
-                    type="button"
-                    className="remove-button"
-                    onClick={() =>
-                      removeFile(index)
-                    }
-                    disabled={loading}
-                  >
-                    ×
-                  </button>
-
-                </div>
-
-              ))}
-
+                );
+              })}
             </div>
-
           )}
-
-
-          {/* ERROR */}
 
           {error && (
-
             <div className="error-message">
-
-              ⚠️{" "}
-
-              <span>
-                {String(error)}
-              </span>
-
+              <AlertIcon />
+              <span>{String(error)}</span>
             </div>
-
           )}
 
-
-          {/* GENERATE BUTTON */}
-
           <button
-            type="button"
             className="generate-button"
+            type="button"
             onClick={generateReport}
-            disabled={
-              loading ||
-              files.length === 0
-            }
+            disabled={loading || files.length === 0}
           >
-
             {loading ? (
-
               <>
                 <span className="spinner"></span>
-                Merging Reports with AI...
+                Generating monthly report...
               </>
-
             ) : (
-
               <>
-                ✨ Generate Monthly Report
+                <SparkleIcon />
+                Generate Monthly Report
               </>
-
             )}
-
           </button>
 
-
           <p className="upload-note">
-            AI will merge all uploaded weekly
-            reports into one detailed monthly
-            report without unnecessarily
-            repeating duplicate information.
+            AI will merge all uploaded weekly reports into one detailed
+            monthly report.
           </p>
-
         </section>
 
-
-        {/* GENERATED REPORT */}
-
-        {report && (
-
-          <section className="card report-card">
-
-            <div className="report-header">
-
-              <div>
-
-                <h3>
-                  Your Monthly Report
-                </h3>
-
-                <p>
-                  Generated and consolidated by Gemini AI
-                </p>
-
+        {report && parsed && (
+          <section className="card report-section">
+            {/* ============ DASHBOARD BANNER (also the PDF cover) ============ */}
+            <div className="dashboard-banner" ref={coverRef}>
+              <div className="banner-row">
+                <div className="banner-logo">
+                  <BuildingIcon />
+                </div>
+                <div className="banner-titles">
+                  <h3>Monthly Report Dashboard</h3>
+                  <p>
+                    {parsed.docTitle}
+                    {generatedAt
+                      ? ` \u00b7 Generated ${generatedAt.toLocaleString()}`
+                      : ""}
+                  </p>
+                </div>
               </div>
-
-
-              <div className="report-actions">
-
-                <button
-                  type="button"
-                  onClick={copyReport}
-                >
-                  📋 Copy
-                </button>
-
-                <button
-                  type="button"
-                  onClick={downloadReport}
-                >
-                  ↓ Download
-                </button>
-
+              <div className="banner-badges">
+                <span className="badge badge-glass">
+                  <SparkleIcon /> AI Generated
+                </span>
+                <span className="badge badge-glass badge-glass-status">
+                  <CheckBadgeIcon /> Status: Completed
+                </span>
               </div>
-
             </div>
 
-
-            <div className="report-content">
-
-              <pre
-                style={{
-                  whiteSpace: "pre-wrap",
-                  fontFamily: "inherit",
-                  margin: 0,
-                }}
+            <div className="report-actions-row">
+              <button type="button" onClick={copyReport}>
+                <CopyIcon /> Copy Report
+              </button>
+              <button
+                type="button"
+                className="export-pdf-button"
+                onClick={exportPdf}
+                disabled={exportingPdf}
               >
-                {String(report)}
-              </pre>
-
+                {exportingPdf ? (
+                  <span className="spinner spinner-dark"></span>
+                ) : (
+                  <DownloadIcon />
+                )}
+                {exportingPdf ? "Preparing PDF..." : "Export as PDF"}
+              </button>
             </div>
 
+            {/* ============ KPI GRID ============ */}
+            <div className="kpi-grid">
+              {kpiCards.map((kpi, i) => (
+                <KpiCard key={kpi.label} index={i} {...kpi} />
+              ))}
+            </div>
+
+            {/* ============ WEEKLY TIMELINE ============ */}
+            <div className="timeline-card">
+              <h4>Weekly Completion Timeline</h4>
+              <div className="timeline">
+                {timeline.map((week, i) => (
+                  <div className="timeline-step" key={week.label}>
+                    <div className="timeline-node-row">
+                      <motion.div
+                        className={`timeline-node ${
+                          week.complete ? "is-complete" : ""
+                        }`}
+                        initial={{ scale: 0 }}
+                        animate={{ scale: 1 }}
+                        transition={{ delay: i * 0.08, duration: 0.3 }}
+                      />
+                      {i < timeline.length - 1 && (
+                        <div className="timeline-line">
+                          <motion.div
+                            className="timeline-line-fill"
+                            initial={{ width: 0 }}
+                            animate={{
+                              width: week.complete ? "100%" : "0%",
+                            }}
+                            transition={{ delay: i * 0.08 + 0.15, duration: 0.4 }}
+                          />
+                        </div>
+                      )}
+                    </div>
+                    <span className="timeline-label">{week.label}</span>
+                    <span
+                      className={`timeline-status ${
+                        week.complete ? "is-complete" : "is-pending"
+                      }`}
+                    >
+                      {week.complete ? "Complete" : "Pending"}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* ============ SECTION CARDS ============ */}
+            <div className="report-content">
+              {parsed.sections.map((section, i) => {
+                const Icon = SECTION_ICONS[section.icon] || DocIcon;
+                const color = colorForSection(section.icon);
+                const size = sectionWordCount(section);
+                const maxSize = Math.max(
+                  ...parsed.sections.map((s) => sectionWordCount(s)),
+                  1
+                );
+                const barPct = Math.max(
+                  8,
+                  Math.round((size / maxSize) * 100)
+                );
+                return (
+                  <motion.details
+                    className={`report-block report-block-${color}`}
+                    key={i}
+                    open={i < 2}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.3, delay: 0.05 * i }}
+                    whileHover={{ y: -2 }}
+                  >
+                    <summary>
+                      <span className="report-block-icon">
+                        <Icon />
+                      </span>
+                      <span className="report-block-heading">
+                        <span className="report-block-number">
+                          {section.number}
+                        </span>
+                        {section.title}
+                      </span>
+                      <span className="report-block-chevron">
+                        <ArrowNextIcon />
+                      </span>
+                    </summary>
+                    <div className="report-block-body">
+                      <div className="activity-bar">
+                        <div
+                          className="activity-bar-fill"
+                          style={{ width: `${barPct}%` }}
+                        />
+                        <span className="activity-bar-label">
+                          {size.toLocaleString()} words
+                        </span>
+                      </div>
+                      {renderBlocks(section.blocks)}
+                    </div>
+                  </motion.details>
+                );
+              })}
+            </div>
           </section>
-
         )}
-
       </main>
 
-
-      {/* FOOTER */}
-
       <footer>
-        AI Monthly Report Generator
-        <span> • </span>
-        Built with React & Gemini AI
+        <p>AI Monthly Report Generator</p>
       </footer>
-
     </div>
   );
 }
