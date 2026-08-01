@@ -1067,6 +1067,188 @@ svg {
 }
 
 /* =========================================================
+   CONCLUSION CHARTS — completion donut + section bar chart
+========================================================= */
+
+.conclusion-charts {
+  margin-top: 22px;
+  padding-top: 20px;
+  border-top: 1px dashed var(--line);
+}
+
+.conclusion-charts-title {
+  margin: 0 0 16px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.conclusion-charts-grid {
+  display: grid;
+  grid-template-columns: 160px 1fr;
+  gap: 26px;
+  align-items: center;
+}
+
+.donut-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.donut-ring {
+  position: relative;
+  width: 128px;
+  height: 128px;
+  border-radius: 50%;
+  background: conic-gradient(
+    var(--ring-color) calc(var(--pct) * 1%),
+    var(--paper) 0
+  );
+}
+
+.donut-ring::before {
+  content: "";
+  position: absolute;
+  inset: 15px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+
+.donut-center {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.donut-value {
+  font-family: var(--font-mono);
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.donut-caption {
+  margin-top: 2px;
+  font-size: 9.5px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.donut-grade {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--ink-soft);
+  font-weight: 600;
+}
+
+.donut-grade-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border-radius: 6px;
+  background: var(--gold-soft);
+  color: var(--gold);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.bars-chart {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+}
+
+.bar-row {
+  display: grid;
+  grid-template-columns: 8px minmax(0, 150px) 1fr 34px;
+  align-items: center;
+  gap: 10px;
+}
+
+.bar-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--teal);
+}
+
+.bar-dot-blue { background: var(--blue); }
+.bar-dot-purple { background: var(--purple); }
+.bar-dot-green { background: var(--green); }
+.bar-dot-teal { background: var(--teal); }
+.bar-dot-orange { background: var(--orange); }
+.bar-dot-red { background: var(--red); }
+.bar-dot-gray { background: var(--gray); }
+
+.bar-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-soft);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bar-track {
+  height: 8px;
+  border-radius: 5px;
+  background: var(--paper);
+  overflow: hidden;
+}
+
+.bar-fill {
+  height: 100%;
+  border-radius: 5px;
+  background: var(--teal);
+}
+
+.bar-fill-blue { background: var(--blue); }
+.bar-fill-purple { background: var(--purple); }
+.bar-fill-green { background: var(--green); }
+.bar-fill-teal { background: var(--teal); }
+.bar-fill-orange { background: var(--orange); }
+.bar-fill-red { background: var(--red); }
+.bar-fill-gray { background: var(--gray); }
+
+.bar-value {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--muted);
+  text-align: right;
+}
+
+@media (max-width: 700px) {
+  .conclusion-charts-grid {
+    grid-template-columns: 1fr;
+    justify-items: center;
+  }
+
+  .bars-chart {
+    width: 100%;
+  }
+
+  .bar-row {
+    grid-template-columns: 8px minmax(0, 110px) 1fr 30px;
+  }
+}
+
+/* =========================================================
    FOOTER
 ========================================================= */
 

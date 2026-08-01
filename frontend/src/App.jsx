@@ -83,6 +83,66 @@ function KpiCard({ icon: Icon, color, label, value, sub, index }) {
   );
 }
 
+// A small "at a glance" chart panel shown only inside the Conclusion
+// section: a completion-percentage donut ring, plus a horizontal bar
+// chart comparing how much content each section carries. Pure CSS/SVG —
+// no charting library.
+function ConclusionCharts({ sections, maxWords, completionPct, quality, ringColor }) {
+  return (
+    <motion.div
+      className="conclusion-charts"
+      initial={{ opacity: 0, y: 10 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true, amount: 0.4 }}
+      transition={{ duration: 0.35 }}
+    >
+      <h5 className="conclusion-charts-title">Report Summary at a Glance</h5>
+      <div className="conclusion-charts-grid">
+        <div className="donut-block">
+          <div
+            className="donut-ring"
+            style={{
+              "--pct": completionPct,
+              "--ring-color": `var(--${ringColor})`,
+            }}
+          >
+            <div className="donut-center">
+              <span className="donut-value">{completionPct}%</span>
+              <span className="donut-caption">Complete</span>
+            </div>
+          </div>
+          <div className="donut-grade">
+            <span className="donut-grade-badge">{quality.grade}</span>
+            <span>{quality.label} quality</span>
+          </div>
+        </div>
+
+        <div className="bars-chart">
+          {sections.map((s) => {
+            const pct = Math.max(6, Math.round((s.words / maxWords) * 100));
+            return (
+              <div className="bar-row" key={s.number + s.title}>
+                <span className={`bar-dot bar-dot-${s.color}`} />
+                <span className="bar-name">{s.title}</span>
+                <div className="bar-track">
+                  <motion.div
+                    className={`bar-fill bar-fill-${s.color}`}
+                    initial={{ width: 0 }}
+                    whileInView={{ width: `${pct}%` }}
+                    viewport={{ once: true, amount: 0.4 }}
+                    transition={{ duration: 0.5 }}
+                  />
+                </div>
+                <span className="bar-value">{s.words}</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
 function App() {
   const [files, setFiles] = useState([]);
   const [report, setReport] = useState("");
@@ -98,7 +158,8 @@ function App() {
   // BACKEND URL
   // ==========================================
 
-  const BACKEND_URL = "http://localhost:5000";
+  const BACKEND_URL =
+    import.meta.env.VITE_BACKEND_URL || "http://localhost:5000";
 
   // ==========================================
   // FILE SELECTION
@@ -219,8 +280,7 @@ function App() {
         error instanceof TypeError &&
         error.message.toLowerCase().includes("fetch")
       ) {
-        errorMessage =
-          "Cannot connect to backend. Make sure your backend server is running on http://localhost:5000.";
+        errorMessage = `Cannot connect to backend at ${BACKEND_URL}.`;
       } else if (error.message) {
         errorMessage = error.message;
       }
@@ -304,6 +364,16 @@ function App() {
 
   const completionColor =
     completionPct >= 80 ? "green" : completionPct >= 50 ? "orange" : "red";
+
+  const sectionStats = parsed
+    ? parsed.sections.map((s) => ({
+        number: s.number,
+        title: s.title,
+        color: colorForSection(s.icon),
+        words: sectionWordCount(s),
+      }))
+    : [];
+  const maxSectionWords = Math.max(...sectionStats.map((s) => s.words), 1);
 
   const kpiCards = parsed
     ? [
@@ -657,14 +727,11 @@ function App() {
                 const Icon = SECTION_ICONS[section.icon] || DocIcon;
                 const color = colorForSection(section.icon);
                 const size = sectionWordCount(section);
-                const maxSize = Math.max(
-                  ...parsed.sections.map((s) => sectionWordCount(s)),
-                  1
-                );
                 const barPct = Math.max(
                   8,
-                  Math.round((size / maxSize) * 100)
+                  Math.round((size / maxSectionWords) * 100)
                 );
+                const isConclusion = section.icon === "flag";
                 return (
                   <motion.details
                     className={`report-block report-block-${color}`}
@@ -700,6 +767,15 @@ function App() {
                         </span>
                       </div>
                       {renderBlocks(section.blocks)}
+                      {isConclusion && (
+                        <ConclusionCharts
+                          sections={sectionStats}
+                          maxWords={maxSectionWords}
+                          completionPct={completionPct}
+                          quality={quality}
+                          ringColor={completionColor}
+                        />
+                      )}
                     </div>
                   </motion.details>
                 );
