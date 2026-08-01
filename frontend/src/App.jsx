@@ -34,6 +34,9 @@ import {
   sectionWordCount,
   computeCompletion,
   computeQuality,
+  computeContentBreakdown,
+  computeWeeklyVolume,
+  computeTopKeywords,
 } from "./reportParser.js";
 import { exportDashboardPdf } from "./pdfExport.js";
 
@@ -140,6 +143,114 @@ function ConclusionCharts({ sections, maxWords, completionPct, quality, ringColo
         </div>
       </div>
     </motion.div>
+  );
+}
+
+// The "read the graph, not the report" panel: sits right under the KPI
+// grid so it's the first thing anyone sees. Unlike the KPI cards (which
+// describe the report's structure — word count, section coverage), this
+// reads the actual bullet content so someone can understand what
+// happened this month without opening a single section.
+function WorkContentOverview({ breakdown, weeklyVolume, keywords }) {
+  const segments = [
+    { key: "wins", label: "Achievements", color: "green", value: breakdown.wins },
+    { key: "problems", label: "Challenges", color: "red", value: breakdown.problems },
+    { key: "planned", label: "Next Steps", color: "teal", value: breakdown.planned },
+  ];
+  const totalBreakdown = segments.reduce((s, seg) => s + seg.value, 0) || 1;
+  const maxWeekWords = Math.max(...weeklyVolume.map((w) => w.words), 1);
+  const maxKeywordCount = Math.max(...keywords.map((k) => k.count), 1);
+
+  return (
+    <div className="content-overview-card">
+      <div className="content-overview-header">
+        <h4>This Month&rsquo;s Work &mdash; At a Glance</h4>
+        <p>Skip the reading. See what actually happened this month.</p>
+      </div>
+
+      <div className="content-overview-grid">
+        <div className="overview-panel">
+          <span className="overview-panel-title">Work Breakdown</span>
+          <div className="stacked-bar">
+            {segments.map((seg) =>
+              seg.value ? (
+                <motion.div
+                  key={seg.key}
+                  className={`stacked-bar-segment stacked-bar-${seg.color}`}
+                  initial={{ width: 0 }}
+                  whileInView={{
+                    width: `${Math.round((seg.value / totalBreakdown) * 100)}%`,
+                  }}
+                  viewport={{ once: true, amount: 0.4 }}
+                  transition={{ duration: 0.5 }}
+                />
+              ) : null
+            )}
+          </div>
+          <div className="stacked-bar-legend">
+            {segments.map((seg) => (
+              <span className="legend-item" key={seg.key}>
+                <span className={`legend-dot legend-dot-${seg.color}`} />
+                {seg.label} <strong>{seg.value}</strong>
+              </span>
+            ))}
+          </div>
+        </div>
+
+        <div className="overview-panel">
+          <span className="overview-panel-title">Work Volume by Week</span>
+          {weeklyVolume.length === 0 ? (
+            <p className="overview-empty">No weekly breakdown detected.</p>
+          ) : (
+            <div className="week-volume-chart">
+              {weeklyVolume.map((w) => {
+                const pct = Math.max(
+                  6,
+                  Math.round((w.words / maxWeekWords) * 100)
+                );
+                return (
+                  <div className="week-volume-col" key={w.week}>
+                    <span className="week-volume-value">{w.words}</span>
+                    <div className="week-volume-track">
+                      <motion.div
+                        className="week-volume-fill"
+                        initial={{ height: 0 }}
+                        whileInView={{ height: `${pct}%` }}
+                        viewport={{ once: true, amount: 0.4 }}
+                        transition={{ duration: 0.5 }}
+                      />
+                    </div>
+                    <span className="week-volume-label">W{w.week}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        <div className="overview-panel">
+          <span className="overview-panel-title">What This Month Was About</span>
+          {keywords.length === 0 ? (
+            <p className="overview-empty">Not enough text to detect themes.</p>
+          ) : (
+            <div className="keyword-cloud">
+              {keywords.map((k) => {
+                const scale = 0.82 + (k.count / maxKeywordCount) * 0.6;
+                return (
+                  <span
+                    className="keyword-pill"
+                    key={k.word}
+                    style={{ fontSize: `${scale}rem` }}
+                  >
+                    {k.word}
+                  </span>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -374,6 +485,12 @@ function App() {
       }))
     : [];
   const maxSectionWords = Math.max(...sectionStats.map((s) => s.words), 1);
+
+  const contentBreakdown = parsed
+    ? computeContentBreakdown(parsed.sections)
+    : { wins: 0, problems: 0, planned: 0 };
+  const weeklyVolume = parsed ? computeWeeklyVolume(parsed.sections) : [];
+  const topKeywords = parsed ? computeTopKeywords(parsed.sections) : [];
 
   const kpiCards = parsed
     ? [
@@ -679,6 +796,13 @@ function App() {
                 <KpiCard key={kpi.label} index={i} {...kpi} />
               ))}
             </div>
+
+            {/* ============ CONTENT-AT-A-GLANCE PANEL ============ */}
+            <WorkContentOverview
+              breakdown={contentBreakdown}
+              weeklyVolume={weeklyVolume}
+              keywords={topKeywords}
+            />
 
             {/* ============ WEEKLY TIMELINE ============ */}
             <div className="timeline-card">

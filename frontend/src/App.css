@@ -1249,6 +1249,190 @@ svg {
 }
 
 /* =========================================================
+   CONTENT-AT-A-GLANCE PANEL — read the graph, not the report
+========================================================= */
+
+.content-overview-card {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: 20px 22px 22px;
+  margin-bottom: 26px;
+}
+
+.content-overview-header h4 {
+  margin: 0 0 3px;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.content-overview-header p {
+  margin: 0 0 18px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.content-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+}
+
+.overview-panel {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 14px 16px 16px;
+  display: flex;
+  flex-direction: column;
+  min-height: 150px;
+}
+
+.overview-panel-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  margin-bottom: 12px;
+}
+
+.overview-empty {
+  margin: auto 0 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* --- work breakdown: single stacked bar --- */
+
+.stacked-bar {
+  display: flex;
+  width: 100%;
+  height: 14px;
+  border-radius: 7px;
+  overflow: hidden;
+  background: var(--paper);
+  margin-bottom: 14px;
+}
+
+.stacked-bar-segment {
+  height: 100%;
+}
+
+.stacked-bar-green { background: var(--green); }
+.stacked-bar-red { background: var(--red); }
+.stacked-bar-teal { background: var(--teal); }
+
+.stacked-bar-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-top: auto;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+
+.legend-item strong {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  color: var(--ink);
+}
+
+.legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.legend-dot-green { background: var(--green); }
+.legend-dot-red { background: var(--red); }
+.legend-dot-teal { background: var(--teal); }
+
+/* --- weekly volume: vertical bar chart --- */
+
+.week-volume-chart {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 10px;
+  flex: 1;
+  height: 100px;
+}
+
+.week-volume-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  height: 100%;
+  justify-content: flex-end;
+}
+
+.week-volume-value {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.week-volume-track {
+  width: 100%;
+  max-width: 28px;
+  height: 68px;
+  border-radius: 5px;
+  background: var(--paper);
+  display: flex;
+  align-items: flex-end;
+  overflow: hidden;
+}
+
+.week-volume-fill {
+  width: 100%;
+  border-radius: 5px;
+  background: linear-gradient(180deg, var(--blue), var(--purple));
+}
+
+.week-volume-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--ink-soft);
+}
+
+/* --- keyword cloud --- */
+
+.keyword-cloud {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  align-content: flex-start;
+}
+
+.keyword-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--teal-soft);
+  color: var(--accent-dark);
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+@media (max-width: 900px) {
+  .content-overview-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* =========================================================
    FOOTER
 ========================================================= */
 

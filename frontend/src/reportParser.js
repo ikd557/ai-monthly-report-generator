@@ -278,3 +278,129 @@ export function computeQuality(sections, words, completionPct) {
 
   return { score, label, grade };
 }
+
+// ==========================================
+// CONTENT-LEVEL CHARTS
+// The KPI grid and conclusion charts above describe the report's
+// *structure* (word counts, section coverage). The functions below read
+// the actual bullet content instead, so someone can glance at a chart
+// and understand what work happened this month without reading the text.
+// ==========================================
+
+// Counts bullet-list items in a section (including nested subsections) —
+// a proxy for "how many discrete things happened" rather than raw prose
+// length, since one long sentence and ten short bullets can have similar
+// word counts but very different amounts of actual work behind them.
+export function sectionItemCount(section) {
+  const walk = (blocks) =>
+    blocks.reduce((sum, block) => {
+      if (block.type === "list") return sum + block.items.length;
+      if (block.type === "subsection") return sum + walk(block.blocks);
+      return sum;
+    }, 0);
+  return walk(section.blocks || []);
+}
+
+// Maps each section's existing icon classification onto one of three
+// "at a glance" content buckets: wins, problems, or forward-looking work.
+const CONTENT_GROUP_FOR_ICON = {
+  check: "wins",
+  alert: "problems",
+  arrow: "planned",
+};
+
+// Achievements vs Challenges vs Next Steps, counted by how many bullet
+// items live under each matching section (falls back to 1 per section if
+// it's written as prose with no bullets, so it still shows up).
+export function computeContentBreakdown(sections) {
+  const totals = { wins: 0, problems: 0, planned: 0 };
+  for (const s of sections) {
+    const group = CONTENT_GROUP_FOR_ICON[s.icon];
+    if (!group) continue;
+    totals[group] += sectionItemCount(s) || 1;
+  }
+  return totals;
+}
+
+// How much work happened each week, read from "### Week N" subsections
+// wherever they appear in the report (usually inside the week-by-week
+// section). Uses word count per week as the volume signal, since some
+// weeks are written as bullets and others as short prose summaries.
+export function computeWeeklyVolume(sections) {
+  const walkWords = (blocks) =>
+    blocks.reduce((sum, block) => {
+      if (block.type === "p") return sum + wordCount(block.text);
+      if (block.type === "list")
+        return sum + block.items.reduce((s, i) => s + wordCount(i), 0);
+      if (block.type === "subsection") return sum + walkWords(block.blocks);
+      return sum;
+    }, 0);
+
+  const byWeek = {};
+  for (const s of sections) {
+    for (const b of s.blocks) {
+      if (b.type === "subsection") {
+        const match = b.title.match(/^week\s*(\d+)/i);
+        if (match) {
+          const n = Number(match[1]);
+          byWeek[n] = (byWeek[n] || 0) + walkWords(b.blocks);
+        }
+      }
+    }
+  }
+
+  return Object.keys(byWeek)
+    .map((n) => ({ week: Number(n), words: byWeek[n] }))
+    .sort((a, b) => a.week - b.week);
+}
+
+// Common words that carry no topical meaning — filtered out so the
+// keyword chart surfaces what the month was actually about (projects,
+// tools, actions) instead of grammar glue.
+const KEYWORD_STOPWORDS = new Set([
+  "the", "and", "for", "with", "this", "that", "these", "those", "from",
+  "into", "over", "under", "about", "after", "before", "between", "during",
+  "was", "were", "are", "is", "be", "been", "being", "has", "have", "had",
+  "will", "would", "could", "should", "can", "may", "might", "not", "all",
+  "any", "each", "more", "most", "also", "than", "then", "such", "which",
+  "who", "whom", "our", "their", "its", "his", "her", "they", "them", "you",
+  "your", "week", "weeks", "month", "monthly", "report", "reports",
+  "team", "continued", "ongoing", "overall", "including", "across", "per",
+  "out", "off", "upon", "while", "when", "where", "there", "here", "next",
+  "additional", "various", "several", "total", "still", "new",
+]);
+
+// Top recurring words across every bullet and paragraph in the report —
+// a lightweight "what was this month about" tag cloud. Not true NLP, just
+// frequency counting with common words filtered out.
+export function computeTopKeywords(sections, limit = 12) {
+  const freq = new Map();
+
+  const tally = (text) => {
+    const words =
+      String(text)
+        .toLowerCase()
+        .replace(/\*\*/g, "")
+        .match(/[a-z][a-z'-]{2,}/g) || [];
+    for (const w of words) {
+      if (KEYWORD_STOPWORDS.has(w)) continue;
+      freq.set(w, (freq.get(w) || 0) + 1);
+    }
+  };
+
+  const walk = (blocks) => {
+    for (const block of blocks) {
+      if (block.type === "p") tally(block.text);
+      else if (block.type === "list") block.items.forEach(tally);
+      else if (block.type === "subsection") walk(block.blocks);
+    }
+  };
+
+  for (const s of sections) walk(s.blocks || []);
+
+  return [...freq.entries()]
+    .filter(([, count]) => count > 1)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, limit)
+    .map(([word, count]) => ({ word, count }));
+}
