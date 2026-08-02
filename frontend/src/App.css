@@ -592,8 +592,8 @@ svg {
 .spinner {
   width: 16px;
   height: 16px;
-  border: 2px solid rgba(9, 6, 25, 0.3);
-  border-top-color: #0d0619;
+  border: 2px solid rgba(6, 16, 25, 0.3);
+  border-top-color: #061019;
   border-radius: 50%;
   animation: spin 0.7s linear infinite;
 }
@@ -696,6 +696,108 @@ svg {
   color: var(--muted);
   text-transform: uppercase;
   letter-spacing: 0.04em;
+}
+
+/* =========================================================
+   REPORT OVERVIEW — content-shape bar chart
+========================================================= */
+
+.report-overview {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: 18px 20px 20px;
+  margin-bottom: 22px;
+}
+
+.report-overview-title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.report-overview-title > span:first-child {
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.report-overview-hint {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.report-overview-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.overview-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 220px) 1fr 42px;
+  align-items: center;
+  gap: 12px;
+}
+
+.overview-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--ink-soft);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.overview-dot {
+  flex-shrink: 0;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--gradient-accent);
+  box-shadow: 0 0 8px var(--accent-glow);
+}
+
+.overview-track {
+  height: 8px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.05);
+  overflow: hidden;
+  border: 1px solid var(--line);
+}
+
+.overview-fill {
+  height: 100%;
+  border-radius: 20px;
+  background: var(--gradient-accent);
+  box-shadow: 0 0 10px var(--accent-glow);
+  transition: width 0.4s ease;
+}
+
+.overview-value {
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+@media (max-width: 700px) {
+  .overview-row {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+
+  .overview-value {
+    text-align: left;
+  }
 }
 
 /* =========================================================

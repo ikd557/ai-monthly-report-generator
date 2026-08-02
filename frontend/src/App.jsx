@@ -21,6 +21,7 @@ import {
   splitInlineBold,
   countWeeks,
   wordCount,
+  sectionWordCount,
 } from "./reportParser.js";
 
 const SECTION_ICONS = {
@@ -228,6 +229,17 @@ function App() {
   const parsed = report ? parseReport(report) : null;
   const weeksMerged = parsed ? countWeeks(parsed.sections) : 0;
   const words = report ? wordCount(report) : 0;
+
+  const overview = parsed
+    ? parsed.sections.map((section) => ({
+        title: section.title,
+        number: section.number,
+        words: sectionWordCount(section),
+      }))
+    : [];
+  const maxOverviewWords = overview.length
+    ? Math.max(...overview.map((s) => s.words), 1)
+    : 1;
 
   // ==========================================
   // INLINE TEXT RENDER (handles **bold**)
@@ -464,6 +476,40 @@ function App() {
                 <span className="stat-label">Words</span>
               </div>
             </div>
+
+            {overview.length > 0 && (
+              <div className="report-overview">
+                <div className="report-overview-title">
+                  <span>Content Overview</span>
+                  <span className="report-overview-hint">
+                    Relative length of each section
+                  </span>
+                </div>
+                <div className="report-overview-bars">
+                  {overview.map((item, i) => {
+                    const pct = Math.max(
+                      6,
+                      Math.round((item.words / maxOverviewWords) * 100)
+                    );
+                    return (
+                      <div className="overview-row" key={i}>
+                        <span className="overview-label">
+                          <span className="overview-dot" />
+                          {item.title}
+                        </span>
+                        <div className="overview-track">
+                          <div
+                            className="overview-fill"
+                            style={{ width: `${pct}%` }}
+                          />
+                        </div>
+                        <span className="overview-value">{item.words}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             <div className="report-content">
               {parsed.sections.map((section, i) => {
