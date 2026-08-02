@@ -57,7 +57,8 @@ function App() {
   // BACKEND URL
   // ==========================================
 
-  const BACKEND_URL = "http://localhost:5000";
+  const BACKEND_URL =
+    "https://ai-monthly-report-generator-backend.vercel.app";
 
   // ==========================================
   // FILE SELECTION
@@ -172,8 +173,7 @@ function App() {
         error instanceof TypeError &&
         error.message.toLowerCase().includes("fetch")
       ) {
-        errorMessage =
-          "Cannot connect to backend. Make sure your backend server is running on http://localhost:5000.";
+        errorMessage = `Cannot connect to the backend at ${BACKEND_URL}. Please try again in a moment.`;
       } else if (error.message) {
         errorMessage = error.message;
       }
