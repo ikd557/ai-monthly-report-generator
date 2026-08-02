@@ -210,6 +210,61 @@ export function sectionWordCount(section) {
   return total;
 }
 
+// Counts "substantive points" in a block tree — each bullet item and
+// each paragraph counts as one point. Used as a proxy for how much
+// happened in a given week/section, regardless of whether the model
+// wrote it as a list or as prose.
+function countPoints(blocks) {
+  let total = 0;
+  for (const b of blocks) {
+    if (b.type === "list") total += b.items.length;
+    else if (b.type === "p") total += 1;
+    else if (b.type === "subsection") total += countPoints(b.blocks);
+  }
+  return total;
+}
+
+// Pulls out the "Week 1 / Week 2 / ..." subsections from the
+// Week-by-Week Progress section and scores each by word count, so the
+// UI can chart activity volume across the month.
+export function getWeeklyTrend(sections) {
+  const weekSection = sections.find((s) =>
+    /week[- ]by[- ]week|weekly/i.test(s.title)
+  );
+  if (!weekSection) return [];
+
+  return weekSection.blocks
+    .filter(
+      (b) => b.type === "subsection" && /^week\s*\d+/i.test(b.title)
+    )
+    .map((b) => ({
+      label: b.title,
+      points: countPoints(b.blocks),
+      words: (() => {
+        let total = 0;
+        const walk = (blocks) => {
+          for (const item of blocks) {
+            if (item.type === "p") total += wordCount(item.text);
+            else if (item.type === "list") {
+              for (const li of item.items) total += wordCount(li);
+            } else if (item.type === "subsection") walk(item.blocks);
+          }
+        };
+        walk(b.blocks);
+        return total;
+      })(),
+    }));
+}
+
+// Counts how many points fall under a section matched by regex —
+// used to compare Key Findings & Achievements against Challenges &
+// Solutions as a quick read on how the month went.
+export function getSectionPointCount(sections, titleMatch) {
+  const section = sections.find((s) => titleMatch.test(s.title));
+  if (!section) return 0;
+  return countPoints(section.blocks);
+}
+
 export function wordCount(text) {
   const trimmed = String(text || "").trim();
   if (!trimmed) return 0;

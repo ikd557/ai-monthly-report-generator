@@ -699,14 +699,14 @@ svg {
 }
 
 /* =========================================================
-   REPORT OVERVIEW — content-shape bar chart
+   REPORT OVERVIEW — monthly performance chart
 ========================================================= */
 
 .report-overview {
   background: rgba(255, 255, 255, 0.02);
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
-  padding: 18px 20px 20px;
+  padding: 20px 22px 22px;
   margin-bottom: 22px;
 }
 
@@ -732,71 +732,121 @@ svg {
   color: var(--muted);
 }
 
-.report-overview-bars {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+/* --- weekly trend line/area chart --- */
+
+.trend-chart {
+  margin-bottom: 22px;
 }
 
-.overview-row {
+.trend-svg {
+  width: 100%;
+  height: 160px;
+  display: block;
+  overflow: visible;
+}
+
+.trend-dot {
+  fill: var(--bg-deep);
+  stroke: var(--accent);
+  stroke-width: 2.5;
+}
+
+.trend-axis-label {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  fill: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.trend-value-label {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  fill: var(--ink-soft);
+}
+
+.trend-caption {
+  margin: 10px 0 0;
+  font-size: 11.5px;
+  color: var(--muted);
+  text-align: center;
+}
+
+/* --- achievements vs challenges comparison --- */
+
+.signal-compare {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+
+.signal-row {
   display: grid;
-  grid-template-columns: minmax(120px, 220px) 1fr 42px;
+  grid-template-columns: minmax(140px, 200px) 1fr 34px;
   align-items: center;
   gap: 12px;
 }
 
-.overview-label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+.signal-label {
   font-size: 12.5px;
-  color: var(--ink-soft);
-  font-weight: 500;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  font-weight: 600;
 }
 
-.overview-dot {
-  flex-shrink: 0;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--gradient-accent);
-  box-shadow: 0 0 8px var(--accent-glow);
+.signal-good {
+  color: var(--success);
 }
 
-.overview-track {
-  height: 8px;
+.signal-bad {
+  color: var(--danger);
+}
+
+.signal-track {
+  height: 9px;
   border-radius: 20px;
   background: rgba(255, 255, 255, 0.05);
   overflow: hidden;
   border: 1px solid var(--line);
 }
 
-.overview-fill {
+.signal-fill {
   height: 100%;
   border-radius: 20px;
-  background: var(--gradient-accent);
-  box-shadow: 0 0 10px var(--accent-glow);
   transition: width 0.4s ease;
 }
 
-.overview-value {
+.signal-fill-good {
+  background: linear-gradient(90deg, #34d399, #22d3ee);
+  box-shadow: 0 0 10px rgba(52, 211, 153, 0.35);
+}
+
+.signal-fill-bad {
+  background: linear-gradient(90deg, #f87171, #fb923c);
+  box-shadow: 0 0 10px rgba(248, 113, 113, 0.3);
+}
+
+.signal-value {
   text-align: right;
   font-family: var(--font-mono);
-  font-size: 11.5px;
-  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink-soft);
 }
 
 @media (max-width: 700px) {
-  .overview-row {
+  .signal-row {
     grid-template-columns: 1fr;
     gap: 6px;
   }
 
-  .overview-value {
+  .signal-value {
     text-align: left;
+  }
+
+  .trend-svg {
+    height: 140px;
   }
 }
 

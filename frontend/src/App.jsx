@@ -21,7 +21,8 @@ import {
   splitInlineBold,
   countWeeks,
   wordCount,
-  sectionWordCount,
+  getWeeklyTrend,
+  getSectionPointCount,
 } from "./reportParser.js";
 
 const SECTION_ICONS = {
@@ -230,16 +231,57 @@ function App() {
   const weeksMerged = parsed ? countWeeks(parsed.sections) : 0;
   const words = report ? wordCount(report) : 0;
 
-  const overview = parsed
-    ? parsed.sections.map((section) => ({
-        title: section.title,
-        number: section.number,
-        words: sectionWordCount(section),
-      }))
-    : [];
-  const maxOverviewWords = overview.length
-    ? Math.max(...overview.map((s) => s.words), 1)
-    : 1;
+  const weeklyTrend = parsed ? getWeeklyTrend(parsed.sections) : [];
+  const achievementsCount = parsed
+    ? getSectionPointCount(parsed.sections, /findings|achievements/i)
+    : 0;
+  const challengesCount = parsed
+    ? getSectionPointCount(parsed.sections, /challenges/i)
+    : 0;
+
+  // ==========================================
+  // WEEKLY TREND CHART GEOMETRY (hand-built SVG line + area)
+  // ==========================================
+
+  const CHART_W = 560;
+  const CHART_H = 160;
+  const CHART_PAD_X = 26;
+  const CHART_PAD_TOP = 18;
+  const CHART_PAD_BOTTOM = 30;
+
+  const trendPoints = (() => {
+    if (weeklyTrend.length === 0) return [];
+    const maxWords = Math.max(...weeklyTrend.map((w) => w.words), 1);
+    const usableW = CHART_W - CHART_PAD_X * 2;
+    const usableH = CHART_H - CHART_PAD_TOP - CHART_PAD_BOTTOM;
+    const step =
+      weeklyTrend.length > 1 ? usableW / (weeklyTrend.length - 1) : 0;
+
+    return weeklyTrend.map((w, i) => {
+      const x =
+        weeklyTrend.length > 1
+          ? CHART_PAD_X + step * i
+          : CHART_PAD_X + usableW / 2;
+      const ratio = maxWords > 0 ? w.words / maxWords : 0;
+      const y = CHART_PAD_TOP + usableH * (1 - ratio);
+      return { ...w, x, y };
+    });
+  })();
+
+  const trendLinePath = trendPoints
+    .map((p, i) => `${i === 0 ? "M" : "L"} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`)
+    .join(" ");
+
+  const trendAreaPath =
+    trendPoints.length > 0
+      ? `${trendLinePath} L ${trendPoints[trendPoints.length - 1].x.toFixed(
+          1
+        )} ${CHART_H - CHART_PAD_BOTTOM} L ${trendPoints[0].x.toFixed(
+          1
+        )} ${CHART_H - CHART_PAD_BOTTOM} Z`
+      : "";
+
+  const maxSignal = Math.max(achievementsCount, challengesCount, 1);
 
   // ==========================================
   // INLINE TEXT RENDER (handles **bold**)
@@ -477,37 +519,114 @@ function App() {
               </div>
             </div>
 
-            {overview.length > 0 && (
+            {(trendPoints.length > 0 || achievementsCount > 0 || challengesCount > 0) && (
               <div className="report-overview">
                 <div className="report-overview-title">
-                  <span>Content Overview</span>
+                  <span>Monthly Performance</span>
                   <span className="report-overview-hint">
-                    Relative length of each section
+                    How the month trended, at a glance
                   </span>
                 </div>
-                <div className="report-overview-bars">
-                  {overview.map((item, i) => {
-                    const pct = Math.max(
-                      6,
-                      Math.round((item.words / maxOverviewWords) * 100)
-                    );
-                    return (
-                      <div className="overview-row" key={i}>
-                        <span className="overview-label">
-                          <span className="overview-dot" />
-                          {item.title}
-                        </span>
-                        <div className="overview-track">
-                          <div
-                            className="overview-fill"
-                            style={{ width: `${pct}%` }}
-                          />
-                        </div>
-                        <span className="overview-value">{item.words}</span>
+
+                {trendPoints.length > 0 && (
+                  <div className="trend-chart">
+                    <svg
+                      viewBox={`0 0 ${CHART_W} ${CHART_H}`}
+                      className="trend-svg"
+                      preserveAspectRatio="none"
+                    >
+                      <defs>
+                        <linearGradient id="trendFill" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="var(--accent)" stopOpacity="0.35" />
+                          <stop offset="100%" stopColor="var(--accent)" stopOpacity="0" />
+                        </linearGradient>
+                        <linearGradient id="trendLine" x1="0" y1="0" x2="1" y2="0">
+                          <stop offset="0%" stopColor="var(--accent)" />
+                          <stop offset="100%" stopColor="var(--accent-2)" />
+                        </linearGradient>
+                      </defs>
+
+                      {trendAreaPath && (
+                        <path d={trendAreaPath} fill="url(#trendFill)" />
+                      )}
+                      {trendLinePath && (
+                        <path
+                          d={trendLinePath}
+                          fill="none"
+                          stroke="url(#trendLine)"
+                          strokeWidth="2.5"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      )}
+
+                      {trendPoints.map((p, i) => (
+                        <g key={i}>
+                          <circle cx={p.x} cy={p.y} r="4.5" className="trend-dot" />
+                          <text
+                            x={p.x}
+                            y={CHART_H - 8}
+                            textAnchor="middle"
+                            className="trend-axis-label"
+                          >
+                            {p.label}
+                          </text>
+                          <text
+                            x={p.x}
+                            y={p.y - 12}
+                            textAnchor="middle"
+                            className="trend-value-label"
+                          >
+                            {p.words}
+                          </text>
+                        </g>
+                      ))}
+                    </svg>
+                    <p className="trend-caption">
+                      Words of reported activity per week &mdash; a proxy for how
+                      much happened.
+                    </p>
+                  </div>
+                )}
+
+                {(achievementsCount > 0 || challengesCount > 0) && (
+                  <div className="signal-compare">
+                    <div className="signal-row">
+                      <span className="signal-label signal-good">
+                        Achievements &amp; findings
+                      </span>
+                      <div className="signal-track">
+                        <div
+                          className="signal-fill signal-fill-good"
+                          style={{
+                            width: `${Math.max(
+                              6,
+                              (achievementsCount / maxSignal) * 100
+                            )}%`,
+                          }}
+                        />
                       </div>
-                    );
-                  })}
-                </div>
+                      <span className="signal-value">{achievementsCount}</span>
+                    </div>
+                    <div className="signal-row">
+                      <span className="signal-label signal-bad">
+                        Challenges raised
+                      </span>
+                      <div className="signal-track">
+                        <div
+                          className="signal-fill signal-fill-bad"
+                          style={{
+                            width: `${Math.max(
+                              6,
+                              (challengesCount / maxSignal) * 100
+                            )}%`,
+                          }}
+                        />
+                      </div>
+                      <span className="signal-value">{challengesCount}</span>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
