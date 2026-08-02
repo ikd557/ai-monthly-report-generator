@@ -1,5 +1,4 @@
-import { useState, useRef } from "react";
-import { motion } from "framer-motion";
+import { useState } from "react";
 import "./App.css";
 import {
   UploadIcon,
@@ -16,29 +15,13 @@ import {
   DownloadIcon,
   TrashIcon,
   ShieldIcon,
-  ClockIcon,
-  TargetIcon,
-  BuildingIcon,
-  StarIcon,
-  FolderIcon,
-  BotIcon,
-  PercentIcon,
 } from "./icons.jsx";
 import {
   parseReport,
   splitInlineBold,
   countWeeks,
   wordCount,
-  readingTime,
-  colorForSection,
-  sectionWordCount,
-  computeCompletion,
-  computeQuality,
-  computeContentBreakdown,
-  computeWeeklyVolume,
-  computeTopKeywords,
 } from "./reportParser.js";
-import { exportDashboardPdf } from "./pdfExport.js";
 
 const SECTION_ICONS = {
   compass: CompassIcon,
@@ -57,220 +40,22 @@ const FILE_BADGES = {
   txt: { label: "TXT", className: "badge-txt" },
 };
 
-const EXPECTED_WEEKS = 4;
-
 function getExtension(filename) {
   return filename.split(".").pop().toLowerCase();
-}
-
-// A small presentational card used across the KPI grid — kept local to
-// this file since it's only ever used here.
-function KpiCard({ icon: Icon, color, label, value, sub, index }) {
-  return (
-    <motion.div
-      className={`kpi-card kpi-${color}`}
-      initial={{ opacity: 0, y: 14 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.35, delay: index * 0.05 }}
-      whileHover={{ y: -4 }}
-    >
-      <div className="kpi-icon">
-        <Icon />
-      </div>
-      <div className="kpi-body">
-        <span className="kpi-value">{value}</span>
-        <span className="kpi-label">{label}</span>
-        {sub ? <span className="kpi-sub">{sub}</span> : null}
-      </div>
-    </motion.div>
-  );
-}
-
-// A small "at a glance" chart panel shown only inside the Conclusion
-// section: a completion-percentage donut ring, plus a horizontal bar
-// chart comparing how much content each section carries. Pure CSS/SVG —
-// no charting library.
-function ConclusionCharts({ sections, maxWords, completionPct, quality, ringColor }) {
-  return (
-    <motion.div
-      className="conclusion-charts"
-      initial={{ opacity: 0, y: 10 }}
-      whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true, amount: 0.4 }}
-      transition={{ duration: 0.35 }}
-    >
-      <h5 className="conclusion-charts-title">Report Summary at a Glance</h5>
-      <div className="conclusion-charts-grid">
-        <div className="donut-block">
-          <div
-            className="donut-ring"
-            style={{
-              "--pct": completionPct,
-              "--ring-color": `var(--${ringColor})`,
-            }}
-          >
-            <div className="donut-center">
-              <span className="donut-value">{completionPct}%</span>
-              <span className="donut-caption">Complete</span>
-            </div>
-          </div>
-          <div className="donut-grade">
-            <span className="donut-grade-badge">{quality.grade}</span>
-            <span>{quality.label} quality</span>
-          </div>
-        </div>
-
-        <div className="bars-chart">
-          {sections.map((s) => {
-            const pct = Math.max(6, Math.round((s.words / maxWords) * 100));
-            return (
-              <div className="bar-row" key={s.number + s.title}>
-                <span className={`bar-dot bar-dot-${s.color}`} />
-                <span className="bar-name">{s.title}</span>
-                <div className="bar-track">
-                  <motion.div
-                    className={`bar-fill bar-fill-${s.color}`}
-                    initial={{ width: 0 }}
-                    whileInView={{ width: `${pct}%` }}
-                    viewport={{ once: true, amount: 0.4 }}
-                    transition={{ duration: 0.5 }}
-                  />
-                </div>
-                <span className="bar-value">{s.words}</span>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    </motion.div>
-  );
-}
-
-// The "read the graph, not the report" panel: sits right under the KPI
-// grid so it's the first thing anyone sees. Unlike the KPI cards (which
-// describe the report's structure — word count, section coverage), this
-// reads the actual bullet content so someone can understand what
-// happened this month without opening a single section.
-function WorkContentOverview({ breakdown, weeklyVolume, keywords }) {
-  const segments = [
-    { key: "wins", label: "Achievements", color: "green", value: breakdown.wins },
-    { key: "problems", label: "Challenges", color: "red", value: breakdown.problems },
-    { key: "planned", label: "Next Steps", color: "teal", value: breakdown.planned },
-  ];
-  const totalBreakdown = segments.reduce((s, seg) => s + seg.value, 0) || 1;
-  const maxWeekWords = Math.max(...weeklyVolume.map((w) => w.words), 1);
-  const maxKeywordCount = Math.max(...keywords.map((k) => k.count), 1);
-
-  return (
-    <div className="content-overview-card">
-      <div className="content-overview-header">
-        <h4>This Month&rsquo;s Work &mdash; At a Glance</h4>
-        <p>Skip the reading. See what actually happened this month.</p>
-      </div>
-
-      <div className="content-overview-grid">
-        <div className="overview-panel">
-          <span className="overview-panel-title">Work Breakdown</span>
-          <div className="stacked-bar">
-            {segments.map((seg) =>
-              seg.value ? (
-                <motion.div
-                  key={seg.key}
-                  className={`stacked-bar-segment stacked-bar-${seg.color}`}
-                  initial={{ width: 0 }}
-                  whileInView={{
-                    width: `${Math.round((seg.value / totalBreakdown) * 100)}%`,
-                  }}
-                  viewport={{ once: true, amount: 0.4 }}
-                  transition={{ duration: 0.5 }}
-                />
-              ) : null
-            )}
-          </div>
-          <div className="stacked-bar-legend">
-            {segments.map((seg) => (
-              <span className="legend-item" key={seg.key}>
-                <span className={`legend-dot legend-dot-${seg.color}`} />
-                {seg.label} <strong>{seg.value}</strong>
-              </span>
-            ))}
-          </div>
-        </div>
-
-        <div className="overview-panel">
-          <span className="overview-panel-title">Work Volume by Week</span>
-          {weeklyVolume.length === 0 ? (
-            <p className="overview-empty">No weekly breakdown detected.</p>
-          ) : (
-            <div className="week-volume-chart">
-              {weeklyVolume.map((w) => {
-                const pct = Math.max(
-                  6,
-                  Math.round((w.words / maxWeekWords) * 100)
-                );
-                return (
-                  <div className="week-volume-col" key={w.week}>
-                    <span className="week-volume-value">{w.words}</span>
-                    <div className="week-volume-track">
-                      <motion.div
-                        className="week-volume-fill"
-                        initial={{ height: 0 }}
-                        whileInView={{ height: `${pct}%` }}
-                        viewport={{ once: true, amount: 0.4 }}
-                        transition={{ duration: 0.5 }}
-                      />
-                    </div>
-                    <span className="week-volume-label">W{w.week}</span>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        <div className="overview-panel">
-          <span className="overview-panel-title">What This Month Was About</span>
-          {keywords.length === 0 ? (
-            <p className="overview-empty">Not enough text to detect themes.</p>
-          ) : (
-            <div className="keyword-cloud">
-              {keywords.map((k) => {
-                const scale = 0.82 + (k.count / maxKeywordCount) * 0.6;
-                return (
-                  <span
-                    className="keyword-pill"
-                    key={k.word}
-                    style={{ fontSize: `${scale}rem` }}
-                  >
-                    {k.word}
-                  </span>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
 }
 
 function App() {
   const [files, setFiles] = useState([]);
   const [report, setReport] = useState("");
   const [generatedAt, setGeneratedAt] = useState(null);
-  const [reportMeta, setReportMeta] = useState(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [exportingPdf, setExportingPdf] = useState(false);
-
-  const coverRef = useRef(null);
 
   // ==========================================
   // BACKEND URL
   // ==========================================
 
-  const BACKEND_URL =
-    import.meta.env.VITE_BACKEND_URL || "http://localhost:5000";
+  const BACKEND_URL = "http://localhost:5000";
 
   // ==========================================
   // FILE SELECTION
@@ -338,7 +123,6 @@ function App() {
     setLoading(true);
     setError("");
     setReport("");
-    setReportMeta(null);
 
     const formData = new FormData();
     files.forEach((file) => formData.append("reports", file));
@@ -358,7 +142,7 @@ function App() {
       let data;
       try {
         data = await response.json();
-      } catch {
+      } catch (jsonError) {
         throw new Error("Backend returned an invalid response.");
       }
 
@@ -371,11 +155,6 @@ function App() {
       if (data?.success) {
         setReport(String(data.report || ""));
         setGeneratedAt(new Date());
-        setReportMeta({
-          aiProvider: data.aiProvider || "Google Gemini",
-          model: data.model || "",
-          filesProcessed: data.filesProcessed || files.length,
-        });
         setError("");
       } else {
         setError(
@@ -391,7 +170,8 @@ function App() {
         error instanceof TypeError &&
         error.message.toLowerCase().includes("fetch")
       ) {
-        errorMessage = `Cannot connect to backend at ${BACKEND_URL}.`;
+        errorMessage =
+          "Cannot connect to backend. Make sure your backend server is running on http://localhost:5000.";
       } else if (error.message) {
         errorMessage = error.message;
       }
@@ -407,41 +187,31 @@ function App() {
     try {
       await navigator.clipboard.writeText(report);
       alert("Monthly report copied to clipboard!");
-    } catch {
+    } catch (error) {
       setError("Could not copy the report.");
     }
   };
 
-  const exportPdf = async () => {
-    if (!report || !parsed) return;
-    setExportingPdf(true);
+  const downloadReport = () => {
+    if (!report) return;
     try {
-      await exportDashboardPdf({
-        coverEl: coverRef.current,
-        parsed,
-        meta: {
-          docTitle: parsed.docTitle,
-          filesProcessed: reportMeta?.filesProcessed ?? files.length,
-          aiProvider: reportMeta?.aiProvider || "Google Gemini",
-          words,
-          readingTime: readingMin,
-          weeksMerged,
-          completionPct,
-          quality,
-          timeline,
-        },
-      });
-    } catch {
-      setError("Could not generate the PDF. Please try again.");
-    } finally {
-      setExportingPdf(false);
+      const blob = new Blob([report], { type: "text/plain;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "monthly-report.txt";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      setError("Could not download the report.");
     }
   };
 
   const clearAll = () => {
     setFiles([]);
     setReport("");
-    setReportMeta(null);
     setError("");
   };
 
@@ -458,94 +228,6 @@ function App() {
   const parsed = report ? parseReport(report) : null;
   const weeksMerged = parsed ? countWeeks(parsed.sections) : 0;
   const words = report ? wordCount(report) : 0;
-  const readingMin = report ? readingTime(words) : 0;
-  const completionPct = parsed ? computeCompletion(parsed.sections) : 0;
-  const quality = parsed
-    ? computeQuality(parsed.sections, words, completionPct)
-    : { score: 0, label: "\u2014", grade: "\u2014" };
-
-  const weeksComplete = Math.min(
-    weeksMerged || reportMeta?.filesProcessed || files.length,
-    EXPECTED_WEEKS
-  );
-  const timeline = Array.from({ length: EXPECTED_WEEKS }, (_, i) => ({
-    label: `Week ${i + 1}`,
-    complete: i < weeksComplete,
-  }));
-
-  const completionColor =
-    completionPct >= 80 ? "green" : completionPct >= 50 ? "orange" : "red";
-
-  const sectionStats = parsed
-    ? parsed.sections.map((s) => ({
-        number: s.number,
-        title: s.title,
-        color: colorForSection(s.icon),
-        words: sectionWordCount(s),
-      }))
-    : [];
-  const maxSectionWords = Math.max(...sectionStats.map((s) => s.words), 1);
-
-  const contentBreakdown = parsed
-    ? computeContentBreakdown(parsed.sections)
-    : { wins: 0, problems: 0, planned: 0 };
-  const weeklyVolume = parsed ? computeWeeklyVolume(parsed.sections) : [];
-  const topKeywords = parsed ? computeTopKeywords(parsed.sections) : [];
-
-  const kpiCards = parsed
-    ? [
-        {
-          icon: FolderIcon,
-          color: "blue",
-          label: "Files Processed",
-          value: reportMeta?.filesProcessed ?? files.length,
-        },
-        {
-          icon: BotIcon,
-          color: "purple",
-          label: "AI Provider",
-          value: reportMeta?.aiProvider || "Google Gemini",
-          sub: reportMeta?.model,
-        },
-        {
-          icon: TargetIcon,
-          color: "green",
-          label: "Completion Status",
-          value: "Completed",
-        },
-        {
-          icon: LayersIcon,
-          color: "teal",
-          label: "Generated Sections",
-          value: parsed.sections.length,
-        },
-        {
-          icon: DocIcon,
-          color: "orange",
-          label: "Word Count",
-          value: words.toLocaleString(),
-        },
-        {
-          icon: ClockIcon,
-          color: "gray",
-          label: "Reading Time",
-          value: `${readingMin} min`,
-        },
-        {
-          icon: StarIcon,
-          color: "gold",
-          label: "Report Quality",
-          value: quality.grade,
-          sub: quality.label,
-        },
-        {
-          icon: PercentIcon,
-          color: completionColor,
-          label: "Completion",
-          value: `${completionPct}%`,
-        },
-      ]
-    : [];
 
   // ==========================================
   // INLINE TEXT RENDER (handles **bold**)
@@ -610,7 +292,7 @@ function App() {
           </div>
         </div>
         <span className="ai-badge">
-          <SparkleIcon /> Powered by Gemini AI
+          <SparkleIcon /> Automated &amp; Verified
         </span>
       </header>
 
@@ -638,7 +320,7 @@ function App() {
             </li>
             <li>
               <span className="step-num">03</span>
-              <span className="step-label">Read, copy, or export as PDF</span>
+              <span className="step-label">Read, copy, or download</span>
             </li>
           </ol>
         </section>
@@ -745,127 +427,49 @@ function App() {
 
         {report && parsed && (
           <section className="card report-section">
-            {/* ============ DASHBOARD BANNER (also the PDF cover) ============ */}
-            <div className="dashboard-banner" ref={coverRef}>
-              <div className="banner-row">
-                <div className="banner-logo">
-                  <BuildingIcon />
-                </div>
-                <div className="banner-titles">
-                  <h3>Monthly Report Dashboard</h3>
-                  <p>
-                    {parsed.docTitle}
-                    {generatedAt
-                      ? ` \u00b7 Generated ${generatedAt.toLocaleString()}`
-                      : ""}
-                  </p>
-                </div>
+            <div className="report-header">
+              <div>
+                <h3>{parsed.docTitle}</h3>
+                <p>
+                  {generatedAt
+                    ? `Generated \u00b7 ${generatedAt.toLocaleString()}`
+                    : "Generated report"}
+                </p>
               </div>
-              <div className="banner-badges">
-                <span className="badge badge-glass">
-                  <SparkleIcon /> AI Generated
-                </span>
-                <span className="badge badge-glass badge-glass-status">
-                  <CheckBadgeIcon /> Status: Completed
-                </span>
+              <div className="report-actions">
+                <button type="button" onClick={copyReport}>
+                  <CopyIcon /> Copy
+                </button>
+                <button type="button" onClick={downloadReport}>
+                  <DownloadIcon /> Download
+                </button>
               </div>
             </div>
 
-            <div className="report-actions-row">
-              <button type="button" onClick={copyReport}>
-                <CopyIcon /> Copy Report
-              </button>
-              <button
-                type="button"
-                className="export-pdf-button"
-                onClick={exportPdf}
-                disabled={exportingPdf}
-              >
-                {exportingPdf ? (
-                  <span className="spinner spinner-dark"></span>
-                ) : (
-                  <DownloadIcon />
-                )}
-                {exportingPdf ? "Preparing PDF..." : "Export as PDF"}
-              </button>
-            </div>
-
-            {/* ============ KPI GRID ============ */}
-            <div className="kpi-grid">
-              {kpiCards.map((kpi, i) => (
-                <KpiCard key={kpi.label} index={i} {...kpi} />
-              ))}
-            </div>
-
-            {/* ============ CONTENT-AT-A-GLANCE PANEL ============ */}
-            <WorkContentOverview
-              breakdown={contentBreakdown}
-              weeklyVolume={weeklyVolume}
-              keywords={topKeywords}
-            />
-
-            {/* ============ WEEKLY TIMELINE ============ */}
-            <div className="timeline-card">
-              <h4>Weekly Completion Timeline</h4>
-              <div className="timeline">
-                {timeline.map((week, i) => (
-                  <div className="timeline-step" key={week.label}>
-                    <div className="timeline-node-row">
-                      <motion.div
-                        className={`timeline-node ${
-                          week.complete ? "is-complete" : ""
-                        }`}
-                        initial={{ scale: 0 }}
-                        animate={{ scale: 1 }}
-                        transition={{ delay: i * 0.08, duration: 0.3 }}
-                      />
-                      {i < timeline.length - 1 && (
-                        <div className="timeline-line">
-                          <motion.div
-                            className="timeline-line-fill"
-                            initial={{ width: 0 }}
-                            animate={{
-                              width: week.complete ? "100%" : "0%",
-                            }}
-                            transition={{ delay: i * 0.08 + 0.15, duration: 0.4 }}
-                          />
-                        </div>
-                      )}
-                    </div>
-                    <span className="timeline-label">{week.label}</span>
-                    <span
-                      className={`timeline-status ${
-                        week.complete ? "is-complete" : "is-pending"
-                      }`}
-                    >
-                      {week.complete ? "Complete" : "Pending"}
-                    </span>
-                  </div>
-                ))}
+            <div className="report-stats">
+              <div className="stat-chip">
+                <span className="stat-value">{files.length || "—"}</span>
+                <span className="stat-label">Weekly reports merged</span>
+              </div>
+              <div className="stat-chip">
+                <span className="stat-value">{parsed.sections.length}</span>
+                <span className="stat-label">Report sections</span>
+              </div>
+              <div className="stat-chip">
+                <span className="stat-value">{weeksMerged || "—"}</span>
+                <span className="stat-label">Weeks covered</span>
+              </div>
+              <div className="stat-chip">
+                <span className="stat-value">{words.toLocaleString()}</span>
+                <span className="stat-label">Words</span>
               </div>
             </div>
 
-            {/* ============ SECTION CARDS ============ */}
             <div className="report-content">
               {parsed.sections.map((section, i) => {
                 const Icon = SECTION_ICONS[section.icon] || DocIcon;
-                const color = colorForSection(section.icon);
-                const size = sectionWordCount(section);
-                const barPct = Math.max(
-                  8,
-                  Math.round((size / maxSectionWords) * 100)
-                );
-                const isConclusion = section.icon === "flag";
                 return (
-                  <motion.details
-                    className={`report-block report-block-${color}`}
-                    key={i}
-                    open={i < 2}
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.3, delay: 0.05 * i }}
-                    whileHover={{ y: -2 }}
-                  >
+                  <details className="report-block" key={i} open={i < 2}>
                     <summary>
                       <span className="report-block-icon">
                         <Icon />
@@ -881,27 +485,9 @@ function App() {
                       </span>
                     </summary>
                     <div className="report-block-body">
-                      <div className="activity-bar">
-                        <div
-                          className="activity-bar-fill"
-                          style={{ width: `${barPct}%` }}
-                        />
-                        <span className="activity-bar-label">
-                          {size.toLocaleString()} words
-                        </span>
-                      </div>
                       {renderBlocks(section.blocks)}
-                      {isConclusion && (
-                        <ConclusionCharts
-                          sections={sectionStats}
-                          maxWords={maxSectionWords}
-                          completionPct={completionPct}
-                          quality={quality}
-                          ringColor={completionColor}
-                        />
-                      )}
                     </div>
-                  </motion.details>
+                  </details>
                 );
               })}
             </div>
